@@ -2,14 +2,16 @@
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { guideOf } from '../chat/guide'
 import type { AssistantItem, ChatItem } from '../chat/model'
+import { GuideCard } from './GuideCard'
 import { ToolStep } from './ToolStep'
 
 // 对应计划里的三个核心场景（docs/00-project-plan.md 第二节）
 const EXAMPLES = [
   '《莉可丽丝》的圣地在哪？',
   '这周末去镰仓巡礼，天气怎么样？',
-  '上低音号在宇治有哪些圣地？从京阪宇治站出发帮我排一条步行路线',
+  '我周六上午 10 点从新宿出发，有 4 个小时，想去孤独摇滚的圣地巡礼',
 ]
 
 function AssistantMessage({ item }: { item: AssistantItem }) {
@@ -23,7 +25,14 @@ function AssistantMessage({ item }: { item: AssistantItem }) {
             <Markdown remarkPlugins={[remarkGfm]}>{p.text}</Markdown>
           </div>
         ) : (
-          <ToolStep part={p} key={p.id} />
+          <div key={p.id}>
+            <ToolStep part={p} />
+            {/* 规划结果渲染成图文攻略卡片：数据来自工具，LLM 接着写导语和看点 */}
+            {(() => {
+              const guide = guideOf(p)
+              return guide && <GuideCard guide={guide} />
+            })()}
+          </div>
         ),
       )}
       {item.status === 'streaming' && empty && <div className="thinking">思考中…</div>}

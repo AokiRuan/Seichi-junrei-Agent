@@ -9,6 +9,7 @@ const LABELS: Record<string, string> = {
   get_weather_forecast: '获取天气预报',
   geocode: '查找地点',
   plan_route: '规划路线',
+  plan_pilgrimage: '规划巡礼行程',
 }
 
 export const toolLabel = (name: string) => LABELS[name] ?? name
@@ -39,6 +40,12 @@ export function describeArgs(t: ToolPart): string {
     case 'plan_route': {
       const n = Array.isArray(a.stops) ? a.stops.length : 0
       return `${n} 个地点 · ${a.mode === 'driving' ? '驾车' : '步行'}`
+    }
+    case 'plan_pilgrimage': {
+      const parts = [`作品 #${a.anime_id}`]
+      if (a.start_name) parts.push(`从${a.start_name}出发`)
+      if (a.time_budget_min) parts.push(`${a.time_budget_min} 分钟`)
+      return parts.join(' · ')
     }
     default:
       return ''
@@ -89,6 +96,12 @@ export function describeResult(t: ToolPart): { text: string; warn?: boolean } {
       if (isObj(d)) {
         const n = Array.isArray(d.stops) ? d.stops.length : 0
         return { text: `${n} 站 · ${d.total_distance_km} km · 约 ${d.total_duration_min} 分钟` }
+      }
+      break
+    case 'plan_pilgrimage':
+      if (isObj(d) && Array.isArray(d.stops)) {
+        const area = isObj(d.area) ? String(d.area.name ?? '') : ''
+        return { text: `${area}一带 · ${d.stops.length} 处 · 共 ${d.total_min} 分钟` }
       }
       break
   }

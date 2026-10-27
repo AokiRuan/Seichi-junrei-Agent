@@ -2,6 +2,7 @@
 //
 // 地图不解析 LLM 写的文字（它可能抄错坐标，05 章实测踩过），只看工具返回的结构化 data。
 // 这也是后端把 data 存进会话的原因：刷新页面后地图能原样恢复
+import { parseGuide } from '../chat/guide'
 import type { ChatItem, ToolPart } from '../chat/model'
 
 export interface Spot {
@@ -137,6 +138,29 @@ export function extractMapData(items: ChatItem[]): MapData {
       case 'plan_route':
         route = toRoute(d) ?? route
         break
+      case 'plan_pilgrimage': {
+        // 巡礼行程：站点即圣地（带图片、集数），同时是一条路线；出发地画成地点标记
+        const g = parseGuide(d)
+        if (!g) break
+        for (const s of g.stops) {
+          spots.set(s.spotId, {
+            id: s.spotId, name: s.name, nameJa: s.nameJa, lat: s.lat, lng: s.lng, anime: g.animeTitle,
+            episodes: s.episodes, scenesCount: s.scenesCount, image: s.image, originUrl: s.originUrl,
+          })
+        }
+        route = {
+          mode: 'walking',
+          stops: g.stops.map((s) => ({ order: s.order, name: s.name, lat: s.lat, lng: s.lng })),
+          legs: g.stops.slice(1).map((s, i) => ({
+            from: g.stops[i].name, to: s.name, distance_km: 0, duration_min: s.walkFromPrevMin,
+          })),
+          totalKm: g.walkKm,
+          totalMin: g.totalMin,
+          estimated: false,
+        }
+        if (g.start) places.set(g.start.name ?? '出发地', { name: g.start.name ?? '出发地', lat: g.start.lat, lng: g.start.lng })
+        break
+      }
       case 'geocode':
         // 只取第一个候选：LLM 通常也是用第一个
         if (isObj(d) && Array.isArray(d.candidates) && hasLatLng(d.candidates[0])) {

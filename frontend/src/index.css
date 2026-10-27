@@ -574,3 +574,138 @@ button:disabled {
     border-right: none;
   }
 }
+
+/* ---------------------------------------------------------------- 巡礼攻略卡片（GuideCard.tsx） */
+
+.guide {
+  margin: 8px 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+
+.guide-head {
+  padding: 12px 14px 10px;
+  background: var(--accent-soft);
+}
+
+.guide-title {
+  font-weight: 700;
+  font-size: 1.02em;
+}
+
+.guide-access {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-access-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.guide-rides {
+  margin: 0;
+  padding-left: 1.6em;
+  font-size: 0.88em;
+}
+
+.ride-line {
+  font-weight: 600;
+}
+
+.tag {
+  font-size: 0.75em;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+}
+
+.tag-warn {
+  color: var(--warn);
+}
+
+.guide-stops {
+  list-style: none;
+  margin: 0;
+  padding: 6px 14px 10px;
+}
+
+.guide-walk {
+  margin: 2px 0 2px 12px;
+  padding-left: 18px;
+  border-left: 2px dashed var(--border);
+  font-size: 0.8em;
+  color: var(--muted);
+}
+
+.guide-stop-body {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 6px 0;
+}
+
+.stop-badge {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.guide-stop-body img {
+  flex: none;
+  width: 112px;
+  height: 63px; /* 16:9，动画截图的比例 */
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--code-bg);
+}
+
+.guide-stop-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.guide-note {
+  font-size: 0.82em;
+  padding: 2px 8px;
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  border-radius: 0 4px 4px 0;
+}
+
+.guide-foot {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.guide-foot details ul {
+  margin: 4px 0;
+  padding-left: 1.4em;
+}
+
+@media (max-width: 900px) {
+  .guide-stop-body img {
+    width: 84px;
+    height: 47px;
+  }
+}
