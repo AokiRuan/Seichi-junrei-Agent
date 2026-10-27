@@ -144,6 +144,7 @@ uvicorn backend.app.main:app --reload
 
 - `backend.app.main:app` 的意思是：模块 `backend.app.main` 里的变量 `app`
 - `--reload`：改代码自动重启，只在开发时用
+- 圣地数据默认读 Anitabi 本地快照，第一次需要先生成：`python -m backend.mcp_servers.seichi.anitabi`（约 15 秒）。没有快照时自动用 mock 数据，见 [03 章](03-mcp-server.md#真实数据anitabi-快照)
 - 启动后访问 http://127.0.0.1:8000/docs —— FastAPI 根据路由**自动生成的交互式 API 文档**，可以直接在页面上发请求测试
 - 如果已经执行过 `npm run build`（`frontend/dist` 存在），http://127.0.0.1:8000 就是前端页面。开发前端时的两终端启动方式见 [10 章](10-frontend.md#动手验证)
 
@@ -174,7 +175,8 @@ python -m pytest -m network # 只跑访问真实外部 API 的集成测试
 
 - [test_app.py](../backend/tests/test_app.py) —— 应用能起来、`/health` 正常
 - 前端的单元测试用 vitest，在 `frontend/` 下 `npm test`（见 10 章）
-- [test_seichi.py](../backend/tests/test_seichi.py) —— 圣地 MCP server，包括一个**真实 stdio 子进程往返**的测试（见 03 章）
+- [test_seichi.py](../backend/tests/test_seichi.py) —— 圣地 MCP server，包括一个**真实 stdio 子进程往返**的测试（见 03 章）。固定用 mock 数据
+- [test_anitabi.py](../backend/tests/test_anitabi.py) —— Anitabi 快照的解析、合并与查询，用手写的原始数组测试；本地有快照时多一个真实数据的粗略检查（见 03 章）
 - [test_weather.py](../backend/tests/test_weather.py) · [test_route.py](../backend/tests/test_route.py) —— 天气与路线 MCP server，用 MockTransport 模拟外部服务（见 04 章）
 - [test_llm.py](../backend/tests/test_llm.py) —— LLM 客户端对响应的解析、system prompt 的日期（见 05 章）
 - [test_loop.py](../backend/tests/test_loop.py) —— 用按剧本回复的假 LLM 测试 agent loop，不花 token（见 05 章）

@@ -10,6 +10,7 @@
 - 给 LLM 用的工具，和给程序员用的函数，设计上有什么不同？
 - 为什么数据源要单独抽一层 Repository？
 - 面对一个陌生的第三方 API，怎么在写代码之前摸清它的真实行为？
+- 一部作品有几百个地标时，给 LLM 的工具该怎么设计？
 
 ## 核心概念
 
@@ -103,8 +104,10 @@ LLM 服务商收到这份定义后，会把它转换并放进模型实际读取�
 mcp_servers/seichi/
 ├── server.py          MCP 协议层：把函数暴露成工具
 ├── repository.py      数据访问层：数据从哪来、怎么查
+├── anitabi.py         下载 Anitabi 数据、生成快照（见下文「真实数据」）
 └── data/
-    └── mock_spots.json   当前的数据源
+    ├── anitabi_snapshot.json   真实数据快照（自己生成，不进 git）
+    └── mock_spots.json         手写的 mock，测试和没有快照时用
 ```
 
 ### server.py：从普通函数到 MCP 工具
@@ -158,15 +161,17 @@ if __name__ == "__main__":
 ```python
 class SeichiRepository(ABC):
     def search_anime(self, title: str, limit: int = 5) -> list[dict]: ...
-    def list_spots(self, anime_id: int) -> list[dict]: ...
+    def list_spots(self, anime_id: int, limit=15, near=None, radius_km=3) -> dict | None: ...
     def get_spot(self, spot_id: str) -> dict | None: ...
 
-class MockRepository(SeichiRepository):
-    """读本地 JSON"""
+class AnitabiRepository(...):    # 读快照
+class MockRepository(...):       # 读手写的 mock
 
 def get_repository() -> SeichiRepository:
-    return MockRepository()      # ← 将来切 Anitabi 只改这一行
+    ...                          # 按环境变量 SEICHI_DATA_SOURCE 选，见下文「真实数据」
 ```
+
+（这是当前的接口。Day 1 时 `list_spots` 只有 `anime_id` 一个参数、直接返回列表，接入真实数据后改了，原因见下文。）
 
 > **Python 知识点：`ABC` 与 `@abstractmethod`**
 >
@@ -179,14 +184,14 @@ def get_repository() -> SeichiRepository:
 >
 > 为什么不用另外两种写法：普通类 + `raise NotImplementedError` 要到调用时才报错，适合只有一个实现的占位（如 `agent/llm.py` 里的骨架）；`typing.Protocol` 只在 mypy/pyright 静态检查时生效，运行时不阻止实例化不完整的类，适合约束不能修改的第三方类。我们的实现类都是自己写的、注定有多个，所以用 ABC。`store/base.py` 的 `SessionStore` 同理。
 
-server.py 只认识 `SeichiRepository` 这个接口，不知道数据来自 JSON 还是 HTTP API。这是 [01 章原则四](01-architecture.md#原则四会变的东西先立接口)的直接应用——而且这次是**真用上了**：数据源原计划用 Anitabi，实测发现不可用后，切 mock 只改了 `get_repository()` 一处。
+server.py 只认识 `SeichiRepository` 这个接口，不知道数据来自 JSON 还是 HTTP API。这是 [01 章原则四](01-architecture.md#原则四会变的东西先立接口)的直接应用——而且这次是**真用上了**：数据源原计划用 Anitabi，实测发现不可用后，切 mock 只改了 `get_repository()` 一处；后来再切回真实数据，agent 和 MCP client 也一行没改。
 
 几个实现细节：
 
-- **`@lru_cache` 加载 JSON**：数据文件只在第一次访问时读一次，之后都从内存拿（`_load.cache_info()` 可以看命中情况）。需要注意三点：
+- **`@lru_cache` 加载 JSON**：数据文件只在第一次访问时读一次，之后都从内存拿（`_load_json.cache_info()` 可以看命中情况）。需要注意三点：
   - **返回的是同一个对象**。实测改了 `_load()` 返回的 dict，其他调用方拿到的也是改过的数据。所以 `_anime_brief()` / `_spot_out()` 都新建 dict 返回，从不修改原始数据——这是这个文件必须保持的隐性约定
-  - 改了 JSON 要重启进程才生效，测试里可用 `_load.cache_clear()`
-  - `_load` 故意写成模块级函数而不是方法：`lru_cache` 加在方法上时 `self` 会成为缓存 key 的一部分，每个实例各缓存一份，而且缓存会一直持有实例引用、导致无法回收
+  - 改了 JSON 要重启进程才生效，测试里可用 `_load_json.cache_clear()`
+  - `_load_json` 故意写成模块级函数而不是方法：`lru_cache` 加在方法上时 `self` 会成为缓存 key 的一部分，每个实例各缓存一份，而且缓存会一直持有实例引用、导致无法回收
 - **`_anime_brief()` 故意不带地标列表**：见下文「给 LLM 设计工具」第 3 条
 - **`_spot_out()` 做字段转换**：把 Anitabi 的 `geo: [lat, lng]` 拆成 `lat` / `lng`，`ep` / `s` 改名成 `episode` / `timestamp_sec`。原因见下文第 4 条
 
@@ -293,6 +298,8 @@ def get_spot(spot_id: str) -> dict:
 - 约 25 个请求后被 Cloudflare 403，45 秒后仍未恢复
 - Anitabi **没有按标题搜索的端点**；用 Bangumi 官方的 `POST api.bgm.tv/v0/search/subjects` 可以补上
 
+**后续（2026-10-21）**：参考开源客户端 [boiboif/anitabi-app](https://github.com/boiboif/anitabi-app) 找到了另一条路——网站地图页自己用的数据文件 `www.anitabi.cn/d/g.json` 里有全部地标的坐标。用同样的方法验证：只发 2 个请求，统计出 1552 部作品、52244 个地标**坐标出现率 100%**。思路是：**官方前端要在浏览器里画地图，坐标总得传到浏览器**，所以去看前端拿数据的请求。详见 [项目计划 4.1 节](00-project-plan.md#新发现网站内部数据文件有完整坐标2026-10-21)。
+
 **如果照着文档直接写代码**：Day 1 的 MCP server 能跑，Day 2 的 agent 能跑，到 Day 3 做地图打点时才发现——没有坐标。那时候已经没有时间调整方案了。
 
 完整实测数据见 [项目计划 4.1 节](00-project-plan.md#41-圣地巡礼-mcp-server自建)。
@@ -305,11 +312,128 @@ def get_spot(spot_id: str) -> dict:
 
 `_meta` 字段诚实地标注了数据的局限：哪些 id 是真实验证过的、坐标只是近似值、不能用于实际导航。mock 数据最怕的是被当成真数据用。
 
+## 真实数据：Anitabi 快照
+
+Day 1 因为没有坐标退回了 mock。Day 3 之后参考开源客户端找到了网站地图页自用的数据文件（发现过程见上面「后续」），把数据源换成了真实数据。**server.py 的工具接口变了一些（下面会讲为什么），但 agent、loop、MCP client 一行没改**——数据层的隔离在这里第二次用上了。
+
+### 数据从哪来、为什么做成快照
+
+[anitabi.py](../backend/mcp_servers/seichi/anitabi.py) 下载两类文件、按地标 id 拼接：
+
+| 文件 | 内容 |
+|---|---|
+| `/d/g.json?d=…` | 全部作品（标题、城市、封面），以及每部作品所有地标的 `[id, 纬度, 经度, 优先级, id, 纬度, …]` 扁平数组 |
+| `/d/g{n}.json?d=…` | 第 n 片作品（每片 250 部）的地标详情：名称、图片、集数、秒数……**不含坐标** |
+
+`d` 是"距 1970 年的天数 + 6，转 36 进制"，每天换一次，用来让 CDN 回源拿新数据。
+
+```powershell
+python -m backend.mcp_servers.seichi.anitabi
+# 完成：1552 部作品、51166 个镜头 → 23225 个地点，15.5 MB，用时 14s
+```
+
+**为什么是"下载一次存成快照"，而不是每次工具调用都实时请求？**
+
+- **Cloudflare 限流**：Day 1 探测时连发约 25 个请求就被 403 了。快照只需 8 个请求（g.json + 7 片），逐个发、中间停 1 秒
+- **演示稳定性**：快照在本地，演示时圣地查询零网络依赖。实测 server 启动 0.7 秒，单次搜索十几毫秒（第一次建索引约 260 毫秒）
+- **使用规范**：数据遵循 CC BY-NC-SA 4.0（非商业、署名、相同方式共享），参考项目的贡献指南也要求不绕过速率限制。低频下载本身就是对数据提供方的尊重
+- **不随代码分发**：快照在 `.gitignore` 里。把别人的数据集放进公开仓库是再分发，许可上有灰色地带；每个环境自己下载（部署时在 Docker 构建里下载，Day 4）
+
+代价是数据不是实时的。地标数据变化很慢，隔段时间重新跑一次即可。
+
+**格式是"按位置的数组"**（第 10 个元素是纬度……），没有字段名、没有兼容承诺，网站改版就可能失效。所以字段位置集中定义成常量（`G_LAT`、`P_FIELDS`），解析失败的条目直接丢弃，而不是让整个快照失败。万一将来完全失效，`get_repository()` 在没有快照时会自动退回 mock，demo 不会挂。
+
+**署名**：地图右下角写了「圣地数据 © Anitabi (CC BY-NC-SA 4.0)」，每个圣地弹窗有「在 Anitabi 查看」的跳转链接（`https://www.anitabi.cn/map?bangumiId=…&pid=…`，页面能打开，但 `pid` 能否直接定位到该地标**未实测**）。
+
+### 把镜头合并成地点
+
+真实数据和 mock 最大的不同是**量**：《上低音号》一部就有 582 个地标。仔细看会发现很多是**同一地点的不同镜头**——北宇治高校（原型莵道高中）一处就有 214 个。直接给 LLM 一个 582 条的列表既浪费 token，也没法回答"有哪些圣地"。
+
+`group_locations()` 分两步合并：
+
+1. **先按文件夹**：数据维护者手工建的"文件夹"地标（`is_folder`），子地标用 `fid` 指向它。这是人工分组，最可信。实测文件夹内的点最远能相距 1 公里（「京坂木幡站」文件夹里有电车内的镜头），按距离合并会拆散它们
+2. **再按距离**：剩下的按优先级从高到低，离已有地点中心 100 米以内就并进去
+
+为什么不按名字合并？实测名字里常带镜头描述：「宇治桥 不甘心」「宇治桥 不甘心 全景2」「电车内 薯条吃太多了」。同一地点名字各不相同。
+
+为什么是 100 米？实测对比（只按距离合并时）：
+
+| 合并半径 | 《上低音号》582 个地标 → | 《摇曳露营△》二期 1073 个 → |
+|---|---|---|
+| 50 米 | 78 个地点（33 个孤点） | 310 |
+| **100 米** | **52** | **225** |
+| 200 米 | 36 | 174 |
+| 400 米 | 27（最大的一个吞了 236 个镜头） | 140 |
+
+50 米把同一座桥拆成好几处；200 米开始把相邻的两个地点并在一起。再加上文件夹合并，《上低音号》最终是 **40 个地点**。
+
+合并时的两个细节：
+
+- **地点名优先用文件夹名**；文件夹没有中文名就留空，**不借成员的**——实测「京坂木幡站」文件夹的成员里有「京阪黄檗站」的镜头，借过来就张冠李戴了
+- **名称清洗**：原始数据里混着零宽空格（`京都​コンサート​ホール`），要去掉。但**不能做 NFKC 全角转半角**——实测它把「吹响吧！上低音号」的「！」变成了「!」。NFKC 只在搜索比较时用
+
+### 两个实现，一套查询逻辑
+
+[repository.py](../backend/mcp_servers/seichi/repository.py)：
+
+```python
+class LocationRepository(SeichiRepository):    # 查询逻辑：搜索、列表、详情
+    def _anime(self) -> list[dict]: ...         # 子类只负责「数据从哪来」
+
+class AnitabiRepository(LocationRepository):   # 读快照
+class MockRepository(LocationRepository):      # 读 mock_spots.json，加载时转成快照格式
+```
+
+mock 在加载时被转换成和快照一样的结构（每个地标就是一个只有一个镜头的地点），所以查询逻辑只写一份。如果两套逻辑各写一遍，测试测的是 mock 那套，线上跑的却是另一套。
+
+`get_repository()` 按环境变量 `SEICHI_DATA_SOURCE` 选择：`auto`（默认，有快照用快照）/ `anitabi` / `mock`。
+
+**测试固定用 mock**：[conftest.py](../backend/tests/conftest.py) 设了 `SEICHI_DATA_SOURCE=mock`。否则测试结果取决于这台机器有没有快照、快照是哪天下载的。有两个地方要注意：
+
+- 必须在 conftest 的**模块顶层**设，不能在 fixture 里：`server.py` 在 import 时就创建了 `repo`
+- MCP client 测试会把 server 拉成**子进程**，子进程只继承白名单里的环境变量（[07 章](07-mcp-client.md#子进程的环境变量)），所以 `SEICHI_DATA_SOURCE` 也加进了 `PASSTHROUGH_ENV`。同理，这个变量**只能设成真正的环境变量**，写进 `.env` 不会生效——`.env` 由 FastAPI 的配置类读取，不会进入 `os.environ`
+
+快照本身的解析与合并在 [test_anitabi.py](../backend/tests/test_anitabi.py) 里用手写的原始数组测试（格式与线上文件一致，不连网络）；最后一个测试读本地真实快照做粗略检查，没有快照时跳过。
+
+### 工具接口为什么要改
+
+数据量变了，原来的接口就不合适了。
+
+**`list_spots` 返回总数 + 前 N 处，而不是全部：**
+
+```json
+{"anime_id": 115908, "anime_title": "吹响吧！上低音号", "city": "宇治市",
+ "source": "Anitabi（anitabi.cn），CC BY-NC-SA 4.0",
+ "total_spots": 40, "shown": 15, "sorted_by": "镜头数（同一地点在动画里出现的次数）从多到少",
+ "spots": [{"spot_id": "7eyih3xg", "name_ja": "莵道高", "lat": 34.908983, "lng": 135.815702,
+            "episode": 1, "timestamp_sec": 164, "episodes": [1, 2, 3, …], "scenes_count": 214, "image": "…"}, …]}
+```
+
+`total_spots` 让 LLM 知道"还有没列出的"，能如实说"共 41 处，以下是最有代表性的 15 处"（实测它确实这么说了）。按镜头数排序，是因为镜头多的地点通常就是名场面。
+
+**加了"某点附近"过滤**：`near_lat` / `near_lng` / `radius_km`。用户问「下北泽站附近有哪些」时，LLM 先 `geocode` 查车站坐标，再带着坐标调 `list_spots`。这比让 LLM 拿到全部地点再自己按坐标筛靠谱得多——LLM 不擅长算距离。
+
+**结果瘦身**：实测 LLM 规划路线时会传 `limit=50`，结果有 16466 个字符，那一轮对话用了 29457 个 token。逐字段统计，两个 URL（图片、来源链接）占 34%，每个地点里重复的作品名、作品 id、城市占 13%。改成作品级字段只在顶层写一次、空值不输出、来源链接由前端用 `anime_id + spot_id` 拼，同样 40 个地点降到 **9563 个字符**。这就是原则 3（输出要省 token）在真实数据量下的样子。`get_spot`（单个地点）仍然输出全部字段。
+
+**搜索容错**：`_norm()` 做 NFKC + 小写 + 去标点，再用"二元组重合度"兜底。[10 章实测](10-frontend.md#实测)里 LLM 把「吹响吧！上低音号」写成「吹响！上低音号」，旧的子串匹配搜不到，LLM 只好换三种写法重试；现在重合度 0.8，一次命中。按城市搜到的作品排在按标题搜到的后面；同样匹配度时地标多的排前面（续作、剧场版通常地标少）。
+
+### 实测
+
+在浏览器里问三个问题（DeepSeek，2026-10-21）：
+
+| 问题 | 工具调用 | 结果 |
+|---|---|---|
+| 上低音号在宇治有哪些圣地？从京阪宇治站出发帮我排一条步行路线 | search_anime「吹响！上低音号」∥ geocode · list_spots(limit=40) · plan_route | 一次搜中，不再重试；从 40 个地点里挑 8 个，排成 5.96 km / 约 80 分钟的路线 |
+| 孤独摇滚的圣地在哪？ | search_anime · list_spots | **mock 里没有的作品**。共 41 处列出 15 处，LLM 自己按下北泽 / 金泽八景 / 江之岛分组介绍。9772 tokens |
+| 孤独摇滚在下北泽站附近有哪些圣地？ | search_anime ∥ geocode「下北沢駅」· list_spots(near, radius_km=1) | 12 处，都带距离（0.07~0.46 km）。9947 tokens |
+
+`∥` 表示同一轮里并行发出的调用。
+
 ## 设计取舍
 
-**mock 数据 vs 实时 API**
+**mock、实时 API、本地快照**
 
-mock 的缺点显而易见：数据少、不能真实反映 Anitabi 的全部作品。但对这个 demo，它反而更合适：演示时零网络依赖、零限流风险、毫秒级响应。demo 的技术展示点是 agent loop 和 MCP，不是数据完整性。天气和路线两个 MCP 仍然会实时调外部 API，"调用真实服务"这个能力照样能展示。
+Day 1 选 mock 的理由是演示时零网络依赖、零限流风险、毫秒级响应。本地快照**保留了这三个优点，同时数据是真的**（1552 部作品）。实时请求 Anitabi 是唯一被排除的方案：限流、演示风险、使用规范三方面都不合适。mock 没有删掉：测试用它（结果稳定），没有快照时退回它（demo 不挂）。
 
 **`lru_cache` vs 每次读文件**
 
@@ -325,8 +449,15 @@ python -m pytest -v -k seichi
 #    它在等 stdin 上的 JSON-RPC 消息。Ctrl+C 退出
 python -m backend.mcp_servers.seichi.server
 
-# 3. 进程内直接调工具函数看看返回格式
-python -c "from backend.mcp_servers.seichi import server; import json; print(json.dumps(server.list_spots(364450)[0], ensure_ascii=False, indent=2))"
+# 3. 下载真实数据，生成快照（约 15 秒、8 个请求；不要频繁执行）
+python -m backend.mcp_servers.seichi.anitabi
+
+# 4. 进程内直接调工具函数看看返回格式（有快照时读的是真实数据）
+python -c "from backend.mcp_servers.seichi import server; import json; print(json.dumps(server.list_spots(115908, limit=3), ensure_ascii=False, indent=2))"
+
+# 5. 强制用 mock 数据（只对当前终端有效）
+$env:SEICHI_DATA_SOURCE = "mock"; python -c "from backend.mcp_servers.seichi import server; print(type(server.repo).__name__)"
+Remove-Item Env:SEICHI_DATA_SOURCE
 ```
 
 重点读一下 [test_seichi.py](../backend/tests/test_seichi.py) 里的 `test_stdio_roundtrip_as_subprocess`——它把 server 拉成子进程、走完整的 `initialize` → `call_tool` 协议流程。**这就是 Day 2 的 `mcp_client.py` 要做的事情的最小原型。**
@@ -340,6 +471,7 @@ npx @modelcontextprotocol/inspector python -m backend.mcp_servers.seichi.server
 ## 延伸思考
 
 1. 原则 5 说"错误是数据"。但 `get_spot` 返回 `{"error": ...}` 时 `is_error=False`——从协议层面看，这次调用是"成功"的。这会不会让 client 端（比如将来的评测脚本）难以统计工具失败率？有什么办法两全？
-2. `search_anime` 目前是简单的子串匹配。用户说"那个京都吹小号的动画"，能搜到吗？如果搜不到，应该改进工具，还是依赖 LLM 自己把用户的话改写成作品名？
-3. 如果将来接入 Anitabi 的 580 个地标，`list_spots` 一次全返回会有什么问题？原则 3 在这里该怎么应用？（提示：想想"这周末去巡礼"和"列出所有圣地"这两种需求的区别）
+2. `search_anime` 现在能容忍写错一两个字。用户说"那个京都吹小号的动画"，能搜到吗？如果搜不到，应该改进工具，还是依赖 LLM 自己把用户的话改写成作品名？
+3. ~~如果将来接入 Anitabi 的 580 个地标，`list_spots` 一次全返回会有什么问题？~~ 已经遇到了，答案见「真实数据」一节。新的问题：合并半径 100 米对城市里的作品合适，对《摇曳露营△》这种在山里、地点相隔几公里的作品也合适吗？要不要按作品的地点密度自动调整（数据里每个地标有 `density`：到最近邻点的距离，单位米）？
 4. MCP server 是独立进程。如果它崩了，agent 这边会发生什么？谁负责重启它？
+5. `list_spots` 结果里的图片 URL 是给前端地图弹窗用的，LLM 用不上，却占了约 17% 的 token。MCP 的工具结果本来就分 `content`（给模型看）和 `structuredContent`（给程序用）两部分。怎么利用这一点，让 LLM 和前端各拿各需要的？

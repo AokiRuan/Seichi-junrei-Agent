@@ -9,7 +9,7 @@
 | 00 | [项目计划](00-project-plan.md) | 做什么、五天怎么排、风险与决策 | ✅ |
 | 01 | [架构与设计思想](01-architecture.md) | 一次请求如何流经整个系统；贯穿全项目的五条设计原则 | ✅ |
 | 02 | [工程搭建](02-project-setup.md) | 目录结构、uv 虚拟环境、依赖、配置、测试、怎么运行 | ✅ |
-| 03 | [MCP Server：圣地巡礼](03-mcp-server.md) | MCP 协议、stdio 传输、给 LLM 设计工具、Repository 模式、先探测再写代码 | ✅ |
+| 03 | [MCP Server：圣地巡礼](03-mcp-server.md) | MCP 协议、stdio 传输、给 LLM 设计工具、Repository 模式、先探测再写代码、真实数据快照与地点合并 | ✅ |
 | 04 | [外部 API 型 MCP：天气与路线](04-external-mcp-servers.md) | 网络失败与降级、依赖注入测试、参数约束、路线排序算法、公共服务使用政策 | ✅ |
 | 05 | [Agent Loop](05-agent-loop.md) | tool calling 消息协议、自建循环、流式分片拼接、system prompt、用假 LLM 测试、真实运行的发现 | ✅ |
 | 06 | [Harness](06-harness.md) | 无状态策略、迭代上限与强制收尾、重复调用检测、上下文裁剪 | ✅ |

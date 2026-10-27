@@ -95,7 +95,7 @@ server 的个数来自配置，写不死。`AsyncExitStack` 让你在循环里�
 ### 子进程的环境变量
 
 ```python
-PASSTHROUGH_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", ...)
+PASSTHROUGH_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", ..., "SEICHI_DATA_SOURCE")
 
 env = {"PYTHONIOENCODING": "utf-8"}
 env.update({k: os.environ[k] for k in PASSTHROUGH_ENV if k in os.environ})
@@ -111,7 +111,7 @@ env = get_default_environment() | (server.env or {})
 
 这是 SDK 出于安全考虑的设计：MCP server 可能是第三方写的，不应该默认拿到你所有的环境变量（里面可能有各种 API key）。代价是，如果你通过代理上网，天气和路线 server 会连不上外部 API，而且报错只会是一个笼统的超时，很难想到原因。所以把代理相关的变量显式传进去。
 
-同理，将来如果某个 server 需要 API key，也要通过 `env` 显式传入，而不能指望它自己从环境里读到。
+同理，将来如果某个 server 需要 API key，也要通过 `env` 显式传入，而不能指望它自己从环境里读到。圣地 server 的数据源开关 `SEICHI_DATA_SOURCE` 就是这样加进白名单的（[03 章](03-mcp-server.md#两个实现一套查询逻辑)）：不加的话，测试进程设了 `mock`，被拉起的子进程却看不到，照样去读快照。
 
 另外两个参数：
 
