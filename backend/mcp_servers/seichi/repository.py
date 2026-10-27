@@ -20,7 +20,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from .anitabi import SNAPSHOT_FILE, distance_m
+from .anitabi import SNAPSHOT_FILE, build_areas, distance_m
 
 MOCK_FILE = Path(__file__).parent / "data" / "mock_spots.json"
 ANITABI_MAP_URL = "https://www.anitabi.cn/map?bangumiId={anime_id}&pid={spot_id}"
@@ -44,6 +44,10 @@ class SeichiRepository(ABC):
     @abstractmethod
     def get_spot(self, spot_id: str) -> dict[str, Any] | None:
         """单个圣地详情，含各个镜头。"""
+
+    @abstractmethod
+    def get_anime(self, anime_id: int) -> dict[str, Any] | None:
+        """作品的内部数据（含 locations 与 areas），给规划器用。只读，不要修改。"""
 
 
 class LocationRepository(SeichiRepository):
@@ -93,6 +97,9 @@ class LocationRepository(SeichiRepository):
             "spots": spots,
         }
 
+    def get_anime(self, anime_id: int) -> dict[str, Any] | None:
+        return self._index()["anime"].get(anime_id)
+
     def get_spot(self, spot_id: str) -> dict[str, Any] | None:
         # 也接受镜头的 id：前端或 LLM 拿到的可能是某个镜头的 id，而不是地点的
         hit = self._index()["spot"].get(spot_id)
@@ -100,6 +107,7 @@ class LocationRepository(SeichiRepository):
             return None
         a, loc = hit
         out = _spot_out(loc, a)
+        out["notes"] = loc.get("notes", [])  # 社区备注：交通、能否进入、现状变化等
         out["scenes"] = [
             {
                 "name_ja": s["name"],
@@ -165,10 +173,12 @@ def _mock_as_locations(path: Path) -> list[dict[str, Any]]:
                 "scenes_count": 1, "episodes": [p["ep"]] if p.get("ep") else [],
                 "ep": p.get("ep"), "s": p.get("s"), "image": p.get("image"),
                 "origin": p.get("origin"), "origin_url": p.get("originURL"),
-                "scenes": [scene], "scene_ids": [p["id"]],
+                "scenes": [scene], "scene_ids": [p["id"]], "notes": [],
             })
         anime.append({**{k: a.get(k) for k in ("id", "cn", "title", "city", "cover", "geo")},
-                      "en": None, "scenes_count": len(locations), "locations": locations})
+                      "en": None, "scenes_count": len(locations), "locations": locations,
+                      # 片区用和快照完全相同的函数算，规划器在 mock 和真实数据上走同一条路
+                      "areas": build_areas(locations, a["id"])})
     return anime
 
 

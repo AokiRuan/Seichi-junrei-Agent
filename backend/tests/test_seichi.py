@@ -15,9 +15,9 @@ async def test_stdio_roundtrip_as_subprocess():
     assert result.structured_content["result"][0]["anime_id"] == 364450
 
 
-async def test_three_tools_registered():
+async def test_tools_registered():
     names = {t.name for t in await server.mcp.list_tools()}
-    assert names == {"search_anime", "list_spots", "get_spot"}
+    assert names == {"search_anime", "list_spots", "get_spot", "plan_pilgrimage"}
 
 
 async def test_tool_schema_generated_from_type_hints():

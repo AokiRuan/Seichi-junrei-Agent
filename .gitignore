@@ -11,6 +11,7 @@ __pycache__/
 # Anitabi 数据快照：由 python -m backend.mcp_servers.seichi.anitabi 生成。
 # 数据是 CC BY-NC-SA 4.0，不随代码再分发，每个环境自己下载
 backend/mcp_servers/seichi/data/anitabi_snapshot.json
+backend/mcp_servers/seichi/data/anitabi_raw/
 
 # Node / 前端
 node_modules/

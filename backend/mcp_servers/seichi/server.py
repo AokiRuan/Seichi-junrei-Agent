@@ -17,17 +17,23 @@ from typing import Annotated, Any
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
+from ..route.client import RouteClient
+from ..route.transit import TransitClient
+from .itinerary import make_itinerary
 from .repository import get_repository
 
 mcp = MCPServer("seichi")
 repo = get_repository()
+# 规划行程要用的两个网络客户端（OSRM 步行矩阵、Transit 换乘）。模块级变量，测试时 monkeypatch 成假的
+route_client = RouteClient(timeout=20)
+transit_client = TransitClient()
 
 
 @mcp.tool()
 def search_anime(title: str) -> list[dict[str, Any]]:
     """按作品名搜索动画，返回作品 id 与基本信息。
 
-    拿到 anime_id 后用 list_spots 查该作品的圣地。
+    拿到 anime_id 后：用户想去巡礼、要行程 / 路线 / 攻略时用 plan_pilgrimage；只是问有哪些圣地时用 list_spots。
     支持中文名、日文原名、英文名、城市名，能容忍个别字写错。
     结果按匹配度排序；返回多部时先看第一部是否就是用户说的那部。
     """
@@ -68,6 +74,34 @@ def get_spot(spot_id: str) -> dict[str, Any]:
         # 返回而不是抛异常——让 LLM 自己决定是换个 id 重试还是告诉用户查不到
         return {"error": f"未找到圣地 {spot_id}"}
     return spot
+
+
+@mcp.tool()
+async def plan_pilgrimage(
+    anime_id: int,
+    start_lat: Annotated[float | None, Field(ge=-90, le=90, description="出发地纬度（用户给了出发地 / 所在位置时）")] = None,
+    start_lng: Annotated[float | None, Field(ge=-180, le=180, description="出发地经度")] = None,
+    start_name: Annotated[str | None, Field(description="出发地名称，如「新宿駅」，用于展示")] = None,
+    time_budget_min: Annotated[int | None, Field(ge=30, le=720, description="可用时间（分钟），含路上的时间。用户没说就不传")] = None,
+    date: Annotated[str | None, Field(pattern=r"^\d{8}$", description="出发日期 YYYYMMDD，用于查电车时刻")] = None,
+    start_time: Annotated[str | None, Field(pattern=r"^\d{1,2}:\d{2}$", description="出发时间 HH:MM")] = None,
+    area_id: Annotated[str | None, Field(description="指定片区（来自上次结果的 other_areas）；不传则自动选")] = None,
+) -> dict[str, Any]:
+    """为一部作品生成可执行的巡礼行程：自动挑出热门且相距不远的一片圣地，在时间预算内选点、排好步行顺序。
+
+    用户想去某部作品的圣地巡礼、要行程 / 路线 / 攻略时，优先用这个工具，不要自己用 list_spots + plan_route 拼。
+    - 给了出发地（先用 geocode 查坐标）时，会考虑离出发地的远近；离得远时会查电车换乘（access）
+    - 给了时间预算时，在预算内尽量多去热门地点；没去成的在 omitted 里，附原因
+    - 结果里的 stops 已排好顺序，带集数、截图、社区备注（notes）、停留和步行时间；界面会把它渲染成图文攻略卡片
+    - other_areas 是这部作品的其他巡礼片区，用户想换地方时传 area_id 重新规划
+    - access.estimated 或 assumptions 里的内容是估算 / 假设，回答时要如实说明
+    """
+    start = (start_lat, start_lng) if start_lat is not None and start_lng is not None else None
+    return await make_itinerary(
+        repo, route_client, transit_client, anime_id,
+        start=start, start_name=start_name, budget_min=time_budget_min,
+        date=date, start_time=start_time, area_id=area_id,
+    )
 
 
 if __name__ == "__main__":

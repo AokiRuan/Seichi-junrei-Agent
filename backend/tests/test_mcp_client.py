@@ -15,7 +15,7 @@ SEICHI_ONLY = [DEFAULT_SERVERS[0]]  # 只起一个子进程，测试更快
 async def test_aggregates_tools_from_all_servers():
     async with MCPClientPool() as pool:
         names = [s["function"]["name"] for s in pool.tool_schemas()]
-        assert sorted(names) == ["geocode", "get_spot", "get_weather_forecast", "list_spots", "plan_route", "search_anime"]
+        assert sorted(names) == ["geocode", "get_spot", "get_weather_forecast", "list_spots", "plan_pilgrimage", "plan_route", "search_anime"]
         assert pool.tool_owner("plan_route") == "route"
         assert pool.tool_owner("search_anime") == "seichi"
         for s in pool.tool_schemas():
