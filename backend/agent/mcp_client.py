@@ -25,8 +25,12 @@ from mcp.client.stdio import stdio_client
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # stdio 子进程默认只继承一小撮系统环境变量（PATH、APPDATA 等），
-# 代理设置不在其中——不显式传入的话，天气/路线 server 在代理环境下会连不上外网
-PASSTHROUGH_ENV = ("HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy")
+# 代理设置不在其中——不显式传入的话，天气/路线 server 在代理环境下会连不上外网。
+# SEICHI_DATA_SOURCE 选圣地 server 的数据源（见 seichi/repository.py），同理要显式传
+PASSTHROUGH_ENV = (
+    "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+    "SEICHI_DATA_SOURCE",
+)
 
 
 @dataclass(frozen=True)

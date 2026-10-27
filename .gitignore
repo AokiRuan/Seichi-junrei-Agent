@@ -8,6 +8,10 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
+# Anitabi 数据快照：由 python -m backend.mcp_servers.seichi.anitabi 生成。
+# 数据是 CC BY-NC-SA 4.0，不随代码再分发，每个环境自己下载
+backend/mcp_servers/seichi/data/anitabi_snapshot.json
+
 # Node / 前端
 node_modules/
 frontend/dist/
