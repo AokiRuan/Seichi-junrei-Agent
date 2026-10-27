@@ -160,10 +160,14 @@ class _SessionContext:
         self._stack = AsyncExitStack()
 
     async def __aenter__(self) -> ClientSession:
-        read, write = await self._stack.enter_async_context(stdio_client(self._params))
-        session = await self._stack.enter_async_context(ClientSession(read, write))
-        await session.initialize()
-        return session
+        try:
+            read, write = await self._stack.enter_async_context(stdio_client(self._params))
+            session = await self._stack.enter_async_context(ClientSession(read, write))
+            await session.initialize()
+            return session
+        except BaseException:
+            await self._stack.aclose()
+            raise
 
     async def __aexit__(self, *exc) -> None:
         await self._stack.aclose()
@@ -182,7 +186,8 @@ def _to_openai_schema(tool) -> dict[str, Any]:
 
 
 def _unwrap(structured: Any) -> Any:
-    """返回 list 等非对象值的工具，结构化结果会被 SDK 包成 {"result": ...}，这里拆掉。"""
+    """返回 list 等非对象值的工具，结构化结果会被 SDK 包成 {"result": ...}，这里拆掉。
+    set()把字典的所有键收成一个集合"""
     if isinstance(structured, dict) and set(structured) == {"result"}:
         return structured["result"]
     return structured
