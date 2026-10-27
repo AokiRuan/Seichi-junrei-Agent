@@ -26,8 +26,11 @@ export function describeArgs(t: ToolPart): string {
       return String(a.query ?? '')
     case 'get_spot':
       return String(a.spot_id ?? '')
-    case 'list_spots':
-      return a.anime_id != null ? `作品 #${a.anime_id}` : ''
+    case 'list_spots': {
+      const parts = a.anime_id != null ? [`作品 #${a.anime_id}`] : []
+      if (a.near_lat != null) parts.push(`附近 ${a.radius_km ?? 3} km`)
+      return parts.join(' · ')
+    }
     case 'get_weather_forecast': {
       const lat = Number(a.lat), lng = Number(a.lng)
       const where = Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(2)}, ${lng.toFixed(2)}` : ''
@@ -61,6 +64,11 @@ export function describeResult(t: ToolPart): { text: string; warn?: boolean } {
       break
     case 'list_spots':
       if (Array.isArray(d)) return { text: `${d.length} 个圣地` }
+      if (isObj(d) && Array.isArray(d.spots)) {
+        const total = Number(d.total_spots ?? d.spots.length)
+        if (total === 0) return { text: '这个范围内没有圣地', warn: true }
+        return { text: total > d.spots.length ? `共 ${total} 处，列出 ${d.spots.length} 处` : `${total} 个圣地` }
+      }
       break
     case 'get_spot':
       if (isObj(d)) return { text: String(d.name_cn ?? d.name_ja ?? '') }

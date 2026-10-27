@@ -67,9 +67,11 @@ function SpotPopup({ s }: { s: Spot }) {
       {s.nameJa && s.nameJa !== s.name && <div className="muted">{s.nameJa}</div>}
       <div className="muted">
         {s.anime}
-        {s.episode != null && ` · 第 ${s.episode} 集`}
-        {s.timestampSec != null && ` ${formatTime(s.timestampSec)}`}
+        {s.episodes && s.episodes.length > 1
+          ? ` · 第 ${s.episodes.slice(0, 6).join('、')}${s.episodes.length > 6 ? ' 等' : ''} 集`
+          : s.episode != null && ` · 第 ${s.episode} 集 ${formatTime(s.timestampSec)}`}
       </div>
+      {s.scenesCount != null && s.scenesCount > 1 && <div className="muted">共 {s.scenesCount} 个镜头</div>}
       {s.originUrl && (
         <a href={s.originUrl} target="_blank" rel="noreferrer">
           在 Anitabi 查看
@@ -87,7 +89,8 @@ export function MapPanel({ data }: { data: MapData }) {
     <section className="map-panel">
       <MapContainer center={JAPAN} zoom={5} className="map" scrollWheelZoom>
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          // 圣地数据遵循 CC BY-NC-SA 4.0，要求署名：和地图底图的版权信息放在一起
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | 圣地数据 &copy; <a href="https://www.anitabi.cn" target="_blank" rel="noreferrer">Anitabi</a> (CC BY-NC-SA 4.0)'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {data.spots.map((s) => (

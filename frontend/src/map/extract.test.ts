@@ -44,6 +44,20 @@ describe('extractMapData', () => {
     expect(m.spots[0]).toMatchObject({ name: '浅草寺 雷门', nameJa: '浅草寺 雷門', episode: 1, anime: '莉可丽丝' })
   })
 
+  it('list_spots 的新格式 {total_spots, spots}，多集与镜头数也带上', () => {
+    // 作品名、作品 id 只在顶层；来源链接由前端拼
+    const { anime_title: _, ...brief } = SPOT
+    const data = { anime_id: 364450, anime_title: '莉可丽丝', total_spots: 40, shown: 1, spots: [{ ...brief, episodes: [1, 3], scenes_count: 57 }] }
+    const m = extractMapData([turn(tool('list_spots', data))])
+    expect(m.spots[0]).toMatchObject({
+      id: 'lyco01',
+      anime: '莉可丽丝',
+      episodes: [1, 3],
+      scenesCount: 57,
+      originUrl: 'https://www.anitabi.cn/map?bangumiId=364450&pid=lyco01',
+    })
+  })
+
   it('路线取最近一次，站点按 order 排序', () => {
     const m = extractMapData([turn(tool('plan_route', { ...ROUTE, mode: 'driving' })), turn(tool('plan_route', ROUTE))])
     expect(m.route?.mode).toBe('walking')

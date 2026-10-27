@@ -11,8 +11,10 @@ export interface Spot {
   lat: number
   lng: number
   anime?: string
-  episode?: number
+  episode?: number // 最早出场的一集与时间点
   timestampSec?: number
+  episodes?: number[] // 出现过的所有集
+  scenesCount?: number // 同一地点合并了几个镜头
   image?: string
   originUrl?: string
 }
@@ -60,20 +62,29 @@ const str = (v: unknown) => (typeof v === 'string' ? v : undefined)
 const num = (v: unknown) => (isNum(v) ? v : undefined)
 const hasLatLng = (v: unknown): v is Obj => isObj(v) && isNum(v.lat) && isNum(v.lng)
 
-function toSpot(v: Obj): Spot | null {
+/**
+ * parent：list_spots 的顶层对象。为了省 LLM 的 token，作品名和作品 id 只在顶层写一次、
+ * 来源链接也不逐个写（见 backend/mcp_servers/seichi/repository.py 的 _spot_brief），这里补回来
+ */
+function toSpot(v: Obj, parent?: Obj): Spot | null {
   const id = str(v.spot_id)
   if (!id || !hasLatLng(v)) return null
+  const animeId = num(v.anime_id) ?? num(parent?.anime_id)
   return {
     id,
     name: str(v.name_cn) ?? str(v.name_ja) ?? id,
     nameJa: str(v.name_ja),
     lat: v.lat as number,
     lng: v.lng as number,
-    anime: str(v.anime_title),
+    anime: str(v.anime_title) ?? str(parent?.anime_title),
     episode: num(v.episode),
     timestampSec: num(v.timestamp_sec),
+    episodes: Array.isArray(v.episodes) ? v.episodes.filter(isNum) : undefined,
+    scenesCount: num(v.scenes_count),
     image: str(v.image),
-    originUrl: str(v.origin_url),
+    originUrl:
+      str(v.origin_url) ??
+      (animeId != null ? `https://www.anitabi.cn/map?bangumiId=${animeId}&pid=${encodeURIComponent(id)}` : undefined),
   }
 }
 
@@ -109,14 +120,15 @@ export function extractMapData(items: ChatItem[]): MapData {
     if (t.status !== 'ok') continue
     const d = t.data
     switch (t.name) {
-      case 'list_spots':
-        if (Array.isArray(d)) {
-          for (const v of d) {
-            const s = isObj(v) ? toSpot(v) : null
-            if (s) spots.set(s.id, s)
-          }
+      case 'list_spots': {
+        // 现在的格式是 {total_spots, shown, spots: [...]}；早期是直接返回数组，兼容一下
+        const list = Array.isArray(d) ? d : isObj(d) && Array.isArray(d.spots) ? d.spots : []
+        for (const v of list) {
+          const s = isObj(v) ? toSpot(v, isObj(d) ? d : undefined) : null
+          if (s) spots.set(s.id, s)
         }
         break
+      }
       case 'get_spot': {
         const s = isObj(d) ? toSpot(d) : null
         if (s) spots.set(s.id, s)
