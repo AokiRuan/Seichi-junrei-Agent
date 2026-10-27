@@ -279,3 +279,5 @@ python -c "import asyncio, json; from backend.mcp_servers.weather.server import 
 2. 降级估算用了"绕路系数 1.3"。这个数字在市区和山区一样吗？如果估算结果偏差很大，`estimated: true` 足以保护用户吗？
 3. 地理编码缓存 `_geocode_cache` 没有上限，也不会过期。在 demo 里没问题，在长期运行的服务里会有什么问题？怎么改？
 4. 天气工具返回的是一个坐标的预报。用户问"这周末去镰仓巡礼天气怎么样"，LLM 需要先拿到镰仓的坐标。它可以从哪两个工具拿到？哪个更合适？
+
+> **后续（2026-10-27）**：路线包里新增了 [transit.py](../backend/mcp_servers/route/transit.py)（电车换乘客户端），它不是独立的 MCP 工具，而是被圣地 server 的 `plan_pilgrimage` 作为库调用；`RouteClient.matrix()` 同样被复用来算巡礼路线的步行时间矩阵。详见 [11 章](11-pilgrimage-planner.md#电车transit-api)。

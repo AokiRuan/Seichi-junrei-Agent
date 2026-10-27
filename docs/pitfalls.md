@@ -56,6 +56,13 @@
 
 ---
 
+### uvicorn 报 `[WinError 10013] 以一种访问权限不允许的方式做了一个访问套接字的尝试`
+
+- **现象**：一直用得好好的 8000 端口，某天启动 uvicorn 突然报 10013；`Get-NetTCPConnection -LocalPort 8000` 查不到任何占用
+- **根因**：端口没被别的进程占，而是被 **Windows 保留**了。`netsh interface ipv4 show excludedportrange protocol=tcp` 显示 7936–8035 这一段被排除——Hyper-V / WSL / Docker 用的 WinNAT 会在开机时动态保留几段端口，每次开机可能不一样
+- **解法**：临时换个不在保留范围里的端口（`uvicorn ... --port 8800`）。根治需要管理员 PowerShell：`net stop winnat; net start winnat` 释放动态保留，或者 `netsh int ipv4 add excludedportrange protocol=tcp startport=8000 numberofports=1` 把 8000 固定保留给自己用（未实测，需要管理员权限）
+- **教训**：「端口被占用」（10048）和「没有权限绑定」（10013）是两回事。后者先查系统保留端口
+
 ## 依赖与包管理
 
 ### venv 里没有 pip
@@ -209,6 +216,13 @@ print(inspect.signature(MCPServer.tool))
 - **解法**：请求时加 `stream_options={"include_usage": True}`。另外 usage 的位置因服务商而异：DeepSeek 放在最后一片（和 `finish_reason` 一起），OpenAI 官方额外发一片 `choices` 为空的。两种都要处理
 
 ---
+
+### LLM 把「总时长」说成「含往返电车」
+
+- **现象**：巡礼规划工具返回 `total_min: 225`（含去程电车），LLM 回答「总时长约 225 分钟，含往返电车，14:00 前后就能回到新宿」；还把 OSRM 按路网算出的步行时间说成「路线服务估算值」
+- **根因**：工具输出没写清楚边界。LLM 看到一个总时长，就按常识补全了「往返」；看到 `assumptions` 里有估算字样，就把所有时间都当成估算
+- **解法**：把事实写进数据，而不是在 prompt 里叮嘱：`assumptions` 加「总时长含去程交通，不含返程」，新增 `walk_source: "OSRM 按实际路网计算"`。第二次实测 LLM 主动说「不含返程，回京都站要另留约 30 分钟」
+- **教训**：LLM 说错工具结果时，先看工具输出是不是有歧义。**边界、单位、数据来源都应该是数据的一部分**
 
 ## Web 与 HTTP
 

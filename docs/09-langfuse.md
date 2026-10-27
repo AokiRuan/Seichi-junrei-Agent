@@ -230,4 +230,4 @@ python -m pytest -v backend/tests/test_tracing.py
 1. 第二轮 LLM 调用只发了工具调用、没有文字，所以没有首字时间。要不要把"第一片工具调用到达的时间"也算作首字时间？用户在这期间看到的是什么？
 2. 每轮的输入 token 一路上涨，主要是工具结果撑大的。从 trace 里看，哪个工具的结果最"贵"？有什么办法让它变小（提示：[03 章原则 3](03-mcp-server.md#3-输出要省-token)）？
 3. 现在每一轮对话都会被记录。如果用户量很大，全量记录的成本和数据量都会成问题。Langfuse 的 `sample_rate` 参数可以只记录一部分，但"只记录 10%"对排查某个用户反馈的具体问题有什么影响？
-4. [15 章](README.md)的评测会用到 Langfuse 的 Datasets 功能。trace 里已经有了 input 和 output，评测还缺什么？
+4. [16 章](README.md)的评测会用到 Langfuse 的 Datasets 功能。trace 里已经有了 input 和 output，评测还缺什么？

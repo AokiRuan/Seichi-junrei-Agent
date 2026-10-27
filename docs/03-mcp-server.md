@@ -104,9 +104,11 @@ LLM 服务商收到这份定义后，会把它转换并放进模型实际读取�
 mcp_servers/seichi/
 ├── server.py          MCP 协议层：把函数暴露成工具
 ├── repository.py      数据访问层：数据从哪来、怎么查
-├── anitabi.py         下载 Anitabi 数据、生成快照（见下文「真实数据」）
+├── anitabi.py         下载 Anitabi 数据、生成快照（见下文「真实数据」）；快照 v2 起还算好巡礼片区
+├── planner.py · itinerary.py   巡礼规划算法与编排（plan_pilgrimage 工具，见 11 章）
 └── data/
     ├── anitabi_snapshot.json   真实数据快照（自己生成，不进 git）
+    ├── anitabi_raw/            下载的原始文件，--offline 重建用（不进 git）
     └── mock_spots.json         手写的 mock，测试和没有快照时用
 ```
 

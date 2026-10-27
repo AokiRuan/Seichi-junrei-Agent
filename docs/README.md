@@ -17,11 +17,12 @@
 | 08 | [FastAPI 与 SSE](08-fastapi-sse.md) | SSE 协议、lifespan 与应用工厂、三层分工、流式接口的校验时机、会话存储格式、接口测试 | ✅ |
 | 09 | [可观测性：Langfuse](09-langfuse.md) | trace 的结构、装饰器模式接入、Langfuse 不可达时的行为、读懂一个真实 trace | ✅ |
 | 10 | [React 前端](10-frontend.md) | 手写 SSE 解析、两条路径一个模型、工具过程可视化、地图只认结构化数据、开发代理与同源部署 | ✅ |
-| 11 | 会话持久化 | SQLAlchemy async、从内存切到 Postgres（接口与内存实现见 08 章） | ⏳ Day 4 |
-| 12 | Docker | 多阶段构建、compose | ⏳ Day 4 |
-| 13 | CI/CD | GitHub Actions、OIDC | ⏳ Day 4 |
-| 14 | AWS 部署 | ECR + App Runner | ⏳ Day 5 |
-| 15 | Agent 评测 | 评测集、指标、Langfuse Experiments | ⏳ Day 6+ |
+| 11 | [巡礼规划：确定性算法 + LLM](11-pilgrimage-planner.md) | 参考开源项目的分工、MST 切片区、定向越野问题与贪心 + 2-opt、免费换乘 API、把边界写进数据、图文攻略卡片 | ✅ |
+| 12 | 会话持久化 | SQLAlchemy async、从内存切到 Postgres（接口与内存实现见 08 章） | ⏳ Day 4 |
+| 13 | Docker | 多阶段构建、compose | ⏳ Day 4 |
+| 14 | CI/CD | GitHub Actions、OIDC | ⏳ Day 4 |
+| 15 | AWS 部署 | ECR + App Runner | ⏳ Day 5 |
+| 16 | Agent 评测 | 评测集、指标、Langfuse Experiments | ⏳ Day 6+ |
 | — | [踩坑日志](pitfalls.md) | 开发中遇到的真实问题、根因与解法 | 持续更新 |
 
 建议先读 01 建立全局图，再按编号顺序读。每章都可以对照代码看——文中的文件链接可以直接点开。

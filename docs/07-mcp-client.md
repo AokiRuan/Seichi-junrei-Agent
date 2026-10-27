@@ -13,7 +13,7 @@
 
 [03 章](03-mcp-server.md)和 [04 章](04-external-mcp-servers.md)写的是 MCP 的 **server** 端：把功能暴露成工具。本章是 **client** 端：agent 这边怎么连上这些 server、怎么调用。
 
-client 要解决的问题是**聚合**：LLM 面对的是一份统一的工具清单（6 个工具），它不需要、也不应该知道这些工具分别来自哪个 server、通过什么方式通信。
+client 要解决的问题是**聚合**：LLM 面对的是一份统一的工具清单（现在是 7 个工具：Day 3 后加了 `plan_pilgrimage`），它不需要、也不应该知道这些工具分别来自哪个 server、通过什么方式通信。
 
 ```
                          ┌─ seichi 子进程 ─ search_anime / list_spots / get_spot

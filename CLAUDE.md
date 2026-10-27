@@ -28,7 +28,8 @@
 - 启动：`uvicorn backend.app.main:app --reload`；接口都在 `/api` 下（`/api/chat`、`/api/sessions`），`/health` 在根路径；手动测接口用 `curl.exe`（PowerShell 的 `curl` 是 `Invoke-WebRequest` 别名），JSON 请求体写文件用 `-Encoding utf8`（`ascii` 会把中文变成 `?`）
 - 测试替身在 `backend/tests/fakes.py`；`conftest.py` 清空了 Langfuse key，测试永不往线上写数据，并固定 `SEICHI_DATA_SOURCE=mock`
 - 圣地数据：`python -m backend.mcp_servers.seichi.anitabi` 生成 Anitabi 本地快照（不进 git，**不要频繁执行**：对方有 Cloudflare 限流）。`SEICHI_DATA_SOURCE` = auto（默认，有快照用快照）/ anitabi / mock，只能设成真正的环境变量（MCP 子进程经 `PASSTHROUGH_ENV` 拿到它，`.env` 里写了无效）
-- 后台启动 uvicorn 前先确认 8000 端口空闲，启动后看日志有没有 bind 失败——否则测的是旧进程里的旧代码
+- 后台启动 uvicorn 前先确认 8000 端口空闲，启动后看日志有没有 bind 失败——否则测的是旧进程里的旧代码。报 `WinError 10013` 是端口被 Windows 动态保留了（`netsh interface ipv4 show excludedportrange protocol=tcp`），临时换 `--port 8800`
+- 快照算法调整后用 `python -m backend.mcp_servers.seichi.anitabi --offline` 重建（读 `data/anitabi_raw/` 缓存，不发请求）
 - Langfuse 项目在 **JP 区域**（`jp.cloud.langfuse.com`）；按 trace 读数据用 `GET /api/public/v2/observations`（旧的 traces 列表接口已 410，单 trace 接口限 5 次/分钟）
 - 前端（`frontend/`，讲解见 docs/10-frontend.md）：Node 是免安装版，在 `%LOCALAPPDATA%\Programs\node-v24.22.1-win-x64`（已加入用户 PATH，新开的终端才生效；旧终端里先 `$env:Path = "$env:LOCALAPPDATA\Programs\node-v24.22.1-win-x64;$env:Path"`）。npm 已配国内镜像。在 `frontend/` 下：`npm test`（vitest）、`npm run lint`（oxlint）、`npm run build`（含 `tsc -b` 类型检查——vitest 不查类型）、`npm run dev`
 - 开发时访问 `http://localhost:5173`（不是 127.0.0.1——Vite 监听的是 IPv6 的 ::1），Vite 把 `/api` 代理到 8000；`npm run build` 后 FastAPI 直接在 8000 提供页面
@@ -43,6 +44,7 @@
 - 追踪用装饰器（`TracedLLM` / `TracedTools`）包住 LLM 与工具，不往 loop 里写 Langfuse 代码
 - 会变的东西先立接口（`SessionStore`、`LLMClient`、`SeichiRepository`）
 - 工具错误作为数据返回给 LLM，不抛异常中断对话
+- 挑点、排序、算时间等组合优化与算术交给确定性代码（`seichi/planner.py` 纯函数，网络客户端由 `itinerary.py` 注入），LLM 只负责理解需求和写评论；工具输出要写明边界与数据来源（如「不含返程」），不指望 LLM 猜对
 - 前端：逻辑写成纯函数（`chat/model.ts`、`map/extract.ts`、`api/sse.ts`）并配单元测试，组件只渲染；地图只用工具返回的结构化 `data`，不解析 LLM 的文字；地图等派生数据从对话 `items` 推导，不单独存状态
 
 ## MCP SDK 2.x

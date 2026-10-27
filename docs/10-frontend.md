@@ -220,6 +220,8 @@ AbortController 放在 `useRef` 而不是 `useState` 里：它不参与渲染，
 
 **署名。** 圣地数据遵循 CC BY-NC-SA 4.0，地图右下角的版权栏里加了「圣地数据 © Anitabi」，和 OpenStreetMap 的底图版权放在一起。
 
+**巡礼攻略卡片。** `plan_pilgrimage` 的结果在工具步骤下方渲染成图文攻略，地图上同时画出编号路线与出发地，详见 [11 章](11-pilgrimage-planner.md#攻略卡片)。
+
 **路线是直线示意。** `plan_route` 返回站点顺序和每段的距离、时间，但不返回道路几何，所以地图上画的是站点之间的直线。要画真实道路需要让路线 server 返回 OSRM 的 `geometry`（见延伸思考）。
 
 **不用 Leaflet 的默认图标，样式写进 pathOptions**，原因见 [踩坑日志](pitfalls.md#前端)。
