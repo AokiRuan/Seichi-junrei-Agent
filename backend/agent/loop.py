@@ -45,6 +45,7 @@ class AgentLoop:
         # 本次运行的状态放在局部变量里：harness 被所有请求共享，不能存状态
         # Counter 是标准库 collections 里的计数器。它本质上就是一个 dict，只多了一个关键特性：读取不存在的键时返回 0，而不是报错。
         seen_calls: Counter[str] = Counter()
+        failures: Counter[str] = Counter()  # 工具名 → 本次 run 里失败的次数（熔断用）
         usage: Counter[str] = Counter()
 
         iteration = 0
@@ -99,7 +100,7 @@ class AgentLoop:
 
             # 同一轮的多个工具调用并行执行（比如同时查京都和东京的天气）
             outcomes = await asyncio.gather(
-                *(self._execute(tc, seen_calls) for tc in resp.tool_calls)
+                *(self._execute(tc, seen_calls, failures) for tc in resp.tool_calls)
             )
 
             # 按 tool_calls 的原始顺序追加结果；每条 tool 消息用 tool_call_id 对应到调用
@@ -114,17 +115,29 @@ class AgentLoop:
                     type="tool_result", tool_name=tc.name, tool_call_id=tc.id, payload=payload
                 )
 
-    async def _execute(self, tc: ToolCall, seen_calls: Counter[str]) -> ToolOutcome:
+    async def _execute(self, tc: ToolCall, seen_calls: Counter[str], failures: Counter[str]) -> ToolOutcome:
         if tc.parse_error:
             text = self.harness.argument_error_message(tc.name, tc.parse_error)
             return ToolOutcome(data=None, is_error=True, text=text)
+
+        unavailable = self.harness.unavailable_tool_message(tc.name, failures)
+        if unavailable:
+            return ToolOutcome(data=None, is_error=True, text=unavailable)
 
         # 检查与计数之间没有 await，所以并行执行时也不会出现竞争
         repeat = self.harness.repeated_call_message(tc.name, tc.arguments, seen_calls)
         if repeat:
             return ToolOutcome(data=None, is_error=True, text=repeat)
 
-        return await self.tools.call_tool(tc.name, tc.arguments)
+        outcome = await self.tools.call_tool(tc.name, tc.arguments)
+        # 只数工具真正执行后的失败；上面 harness 自己拦下的（坏 JSON、重复调用）不算——
+        # 那是 LLM 的问题，不说明工具不可用。业务上的「查不到」（data 里的 error）也不算
+        if outcome.is_error:
+            failures[tc.name] += 1
+            note = self.harness.tool_failure_note(tc.name, failures)
+            if note:
+                outcome = ToolOutcome(data=outcome.data, is_error=True, text=outcome.text + note)
+        return outcome
 
 
 def _accumulate(total: Counter[str], usage: dict[str, Any] | None) -> None:

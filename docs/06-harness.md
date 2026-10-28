@@ -7,7 +7,7 @@
 - harness 和 loop 的分工是什么？为什么要分开？
 - 一个被所有请求共享的对象，为什么不能保存"本次运行"的状态？
 - LLM 一直调工具停不下来，怎么办？直接截断有什么问题？
-- LLM 用完全相同的参数反复调同一个工具，说明什么？怎么处理？
+- LLM 用完全相同的参数反复调同一个工具，说明什么？怎么处理？换着参数调一个已经挂掉的工具呢？
 - 对话历史太长要裁剪时，为什么不能随便从中间切开？
 
 ## 核心概念
@@ -15,7 +15,7 @@
 [05 章](05-agent-loop.md)的 loop 只写了"正常情况"：问 LLM、调工具、回填、再问。但 LLM 是个不可控的决策者，它可能：
 
 - 一直调工具，永远不给最终回答
-- 用同样的参数反复调同一个工具（它卡住了）
+- 用同样的参数反复调同一个工具（它卡住了），或者换着参数反复调一个已经挂掉的工具
 - 生成格式错误的参数
 - 让对话历史长到超出上下文窗口
 
@@ -94,6 +94,38 @@ LLM 用完全相同的参数反复调同一个工具，通常说明它卡在了�
 为什么阈值是 2 而不是 1：同样的参数调两次有合理的情况，比如第一次网络超时、LLM 重试（05 章实测就发生过）。
 
 **并发安全**：一轮里的多个工具调用是用 `asyncio.gather` 并行执行的，它们共享同一个 `seen_calls`。会不会出现竞争？不会：`repeated_call_message` 里"检查"和"计数"之间没有 `await`。asyncio 是单线程的，只在 `await` 处切换任务，没有 `await` 的一段代码不会被打断。
+
+### 工具熔断（评测发现后加的）
+
+重复调用检测有个漏洞：它只认"参数完全相同"。[16 章](16-evaluation.md)的故障注入评测里，天气工具一直超时，LLM 的应对是：
+
+```
+get_weather_forecast {"lat": 35.319003, "lng": 139.5506805, "days": 5}  → 超时
+get_weather_forecast {"lat": 35.319,    "lng": 139.5507,    "days": 5}  → 超时
+get_weather_forecast {"lat": 35.32,     "lng": 139.55,      "days": 5}  → 超时
+get_weather_forecast {"lat": 35.319,    "lng": 139.551,     "days": 4}  → 超时
+```
+
+每次把坐标改一点点，对重复检测来说就是"新"调用。工具本身挂了的时候，换参数没有意义。所以加了第二道检测：**按工具名计数失败次数**，不管参数。
+
+```python
+# loop._execute 里，真正执行工具之后
+if outcome.is_error:
+    failures[tc.name] += 1
+    note = self.harness.tool_failure_note(tc.name, failures)   # 刚到上限：在这次错误后面附一句「本轮不要再调用它」
+    ...
+# 执行之前
+unavailable = self.harness.unavailable_tool_message(tc.name, failures)  # 已到上限：不执行，直接返回提示
+```
+
+两步都要：
+
+- **刚到上限时附提示**：LLM 在下一次尝试**之前**就知道该停了，省掉一轮 LLM 调用
+- **超过上限时拦截**：LLM 无视提示继续调时的硬保证
+
+只数工具真正执行后的 `is_error`。harness 自己拦下的（坏 JSON、重复调用）不算，那是 LLM 的问题，不说明工具不可用；业务上的"查不到"（`data` 里的 `error`，比如"没有这部作品"）也不算，那是正常结果。
+
+默认上限 2：超时后重试一次是合理的（网络偶尔抖动），第二次还失败，大概率是服务真的挂了。`Harness(max_tool_failures=0)` 关闭熔断，用来做消融对比。
 
 ### 参数错误转译
 
@@ -185,9 +217,10 @@ python -m pytest -v backend/tests/test_harness.py backend/tests/test_loop.py
 - `test_iteration_limit_forces_final_answer_without_tools` —— LLM 一直调工具停不下来
 - `test_repeated_identical_calls_are_short_circuited` —— LLM 反复发出完全相同的调用
 - `test_invalid_json_arguments_are_not_executed` —— LLM 生成了坏 JSON
+- `test_failing_tool_is_cut_off_even_with_varied_arguments` —— 工具一直失败，LLM 换着参数重试（评测里发现的真实行为）
 
 ## 延伸思考
 
 1. 超限后的收尾指令是追加一条 user 消息。如果 LLM 无视它，仍然想调工具，会发生什么？（提示：看 `tools=None`）
-2. 重复调用检测只看"工具名 + 参数完全相同"。LLM 用 `{"title": "莉可丽丝"}` 和 `{"title": "莉可麗絲"}` 交替搜索，算不算卡住了？该怎么识别？
+2. 重复调用检测只看"工具名 + 参数完全相同"。LLM 用 `{"title": "莉可丽丝"}` 和 `{"title": "莉可麗絲"}` 交替搜索，算不算卡住了？该怎么识别？（工具**失败**时的版本已经由工具熔断解决；工具**成功**但结果没用时，LLM 换着说法反复搜，熔断管不到——怎么办？）
 3. 如果要按 token 数裁剪，被裁掉的早期对话里有用户说过的重要信息（比如"我不能爬山"），怎么办？

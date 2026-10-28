@@ -25,6 +25,7 @@ class Harness:
         max_iterations: int = 8,
         max_history_messages: int = 40,
         max_repeat_calls: int = 2,
+        max_tool_failures: int = 2,
     ) -> None:
         # 一次 run 里最多问 LLM 几轮（每轮可能包含多个并行的工具调用）
         self.max_iterations = max_iterations
@@ -32,6 +33,8 @@ class Harness:
         self.max_history_messages = max_history_messages
         # 同一个工具、同样的参数，最多真正执行几次
         self.max_repeat_calls = max_repeat_calls
+        # 同一个工具在一次 run 里失败几次后熔断（不管参数是否相同）。0 表示不熔断
+        self.max_tool_failures = max_tool_failures
 
     # ------------------------------------------------------------ 迭代上限
 
@@ -66,6 +69,28 @@ class Harness:
             )
         seen[key] += 1
         return None
+
+    # ------------------------------------------------------------ 工具熔断
+
+    def unavailable_tool_message(self, name: str, failures: Counter) -> str | None:
+        """该工具本次 run 里已经失败够多次时，不再执行，直接返回这段提示。
+
+        重复调用检测只认「参数完全相同」。评测实测（docs/16）：天气工具超时后，LLM 把坐标
+        从 35.319003 改成 35.319、35.32 连试 4 次，每次都是「新」调用。工具挂了的时候
+        换参数也没用，所以按工具名计数
+        """
+        if self.max_tool_failures and failures[name] >= self.max_tool_failures:
+            return (
+                f"{name} 在本轮已经失败 {failures[name]} 次，视为暂时不可用，没有再执行。"
+                "不要再调用它：用其他工具或已有信息回答，并告诉用户这部分暂时没查到。"
+            )
+        return None
+
+    def tool_failure_note(self, name: str, failures: Counter) -> str:
+        """失败次数刚到上限时，附在这次错误后面的提示：让 LLM 在下一次尝试之前就知道该停了。"""
+        if self.max_tool_failures and failures[name] == self.max_tool_failures:
+            return f"（{name} 已连续失败 {failures[name]} 次，视为暂时不可用，本轮不要再调用它。）"
+        return ""
 
     # ------------------------------------------------------------ 错误转译
 

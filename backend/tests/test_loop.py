@@ -109,6 +109,42 @@ async def test_repeated_identical_calls_are_short_circuited():
     assert "已经用相同的参数调用过" in llm.requests[3]["messages"][-1]["content"]
 
 
+async def test_failing_tool_is_cut_off_even_with_varied_arguments():
+    """评测实测（docs/16）：工具超时后 LLM 微调参数反复重试，绕过了「参数完全相同」的重复检测。"""
+    def handler(name, args):
+        return ToolOutcome(data=None, is_error=True, text="超时")
+
+    llm = FakeLLM(*(with_tools(call(f"c{i}", title=f"第{i}次")) for i in range(1, 4)), answer("天气暂时查不到"))
+    tools = FakeTools(handler)
+    events = await run(AgentLoop(llm, tools, Harness(max_tool_failures=2)), USER)
+
+    assert len(tools.calls) == 2  # 第三次没有真正执行
+    errors = [e.payload["error"] for e in events if e.type == "tool_result"]
+    assert errors[0] == "超时"
+    assert "本轮不要再调用它" in errors[1]  # 第二次失败时就提醒
+    assert "视为暂时不可用，没有再执行" in errors[2]
+
+
+async def test_tool_failures_disabled_and_business_errors_not_counted():
+    # max_tool_failures=0 关闭熔断（消融实验用）
+    def failing(name, args):
+        return ToolOutcome(data=None, is_error=True, text="超时")
+
+    llm = FakeLLM(*(with_tools(call(f"c{i}", title=f"{i}")) for i in range(1, 4)), answer("ok"))
+    tools = FakeTools(failing)
+    await run(AgentLoop(llm, tools, Harness(max_tool_failures=0)), USER)
+    assert len(tools.calls) == 3
+
+    # 业务上的「查不到」不是工具故障
+    def not_found(name, args):
+        return ToolOutcome(data={"error": "没有这部作品"}, is_error=False, text="没有这部作品")
+
+    llm = FakeLLM(*(with_tools(call(f"c{i}", title=f"{i}")) for i in range(1, 4)), answer("ok"))
+    tools = FakeTools(not_found)
+    await run(AgentLoop(llm, tools, Harness(max_tool_failures=2)), USER)
+    assert len(tools.calls) == 3
+
+
 async def test_iteration_limit_forces_final_answer_without_tools():
     llm = FakeLLM(
         with_tools(call("c1", title="1")),
