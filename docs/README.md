@@ -18,10 +18,10 @@
 | 09 | [可观测性：Langfuse](09-langfuse.md) | trace 的结构、装饰器模式接入、Langfuse 不可达时的行为、读懂一个真实 trace | ✅ |
 | 10 | [React 前端](10-frontend.md) | 手写 SSE 解析、两条路径一个模型、工具过程可视化、地图只认结构化数据、开发代理与同源部署 | ✅ |
 | 11 | [巡礼规划：确定性算法 + LLM](11-pilgrimage-planner.md) | 参考开源项目的分工、MST 切片区、定向越野问题与贪心 + 2-opt、免费换乘 API、把边界写进数据、图文攻略卡片 | ✅ |
-| 12 | 会话持久化 | SQLAlchemy async、从内存切到 Postgres（接口与内存实现见 08 章） | ⏳ Day 4 |
+| 12 | [上线准备：访问码、会话隔离与持久化](12-going-public.md) | 公网的三个风险、无状态访问码（HMAC cookie）、匿名访客隔离与 404、纯 ASGI 中间件、一份 SQLAlchemy 跑 SQLite 与 Postgres | ✅ |
 | 13 | Docker | 多阶段构建、compose | ⏳ Day 4 |
 | 14 | CI/CD | GitHub Actions、OIDC | ⏳ Day 4 |
-| 15 | AWS 部署 | ECR + App Runner | ⏳ Day 5 |
+| 15 | 云部署 | 选型待定（App Runner 已不接受新客户） | ⏸ 暂缓，先本地演示 |
 | 16 | [Agent 评测](16-evaluation.md) | 参考 TravelPlanner / τ-bench 的检查与指标、工具缓存与故障注入、生成与打分分离、基线结果与发现 | ✅ |
 | — | [踩坑日志](pitfalls.md) | 开发中遇到的真实问题、根因与解法 | 持续更新 |
 
@@ -40,6 +40,6 @@
 
 ## 约定
 
-- **状态标记**：✅ 已实现 · 🚧 骨架已建、逻辑待写 · ⏳ 未开始
+- **状态标记**：✅ 已实现 · 🚧 骨架已建、逻辑待写 · ⏳ 未开始 · ⏸ 暂缓
 - **命令**：都在项目根目录执行，Windows PowerShell 环境
 - 文档描述的是**当前代码的真实状态**。如果你发现文档和代码对不上，以代码为准，并且那是个 bug——告诉我

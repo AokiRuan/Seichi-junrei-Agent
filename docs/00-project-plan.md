@@ -1,12 +1,14 @@
 # Aoki-Agent 项目计划
 
-> 最后更新：2026-09-18
+> 最后更新：2026-10-28
 
 ## 一、项目定位
 
 做一个**日本动画圣地巡礼 agent** 的完整前后端。用户说「我想去《你的名字》的取景地」，agent 查圣地、看天气、规划路线、给出行程建议——所有能力通过 MCP 工具接入，agent loop 与 harness 自建。
 
 **目标：5 天 vibe coding 出可用 demo（评测除外），部署到 AWS 可公网访问。**
+
+> 2026-10-28 决定：**公网部署暂缓**，先在本地运行给别人演示，继续学习、优化 agent 后再部署。原因是成本：常驻一台能跑 MCP 子进程的服务器（实测约 420 MB 内存，需 1 GB 档）每月约 $12 起，托管容器方案 $40 以上，再加 LLM 按量费用。部署所需的代码前提（访问码、会话隔离、持久化）已经做好，见 [docs/12](12-going-public.md)。
 
 这是一个学习驱动的项目，但学习方式从「继承改写现成框架」切换为「在真实场景下自建 loop 与 harness」。技术栈刻意覆盖一条完整的工程链路：MCP → agent → API → 前端 → 可观测 → 容器 → 云 → CI/CD。
 
@@ -165,10 +167,11 @@ Harness 需要覆盖的点：
 
 `tools/registry.py` 里的 schema 导出思路可以借鉴，但 MCP 协议本身已提供工具 schema，registry 的角色变成「MCP client 的聚合层」。
 
-### 4.4 后端 FastAPI ✅（Postgres 待 Day 4）
+### 4.4 后端 FastAPI ✅
 
 - `POST /api/chat` — SSE 流式（FastAPI 内置 `EventSourceResponse`），事件类型：`session` / `token` / `tool_call` / `tool_result` / `done` / `error`；带 `session_id`，不传则新建，不存在返回 404
-- `GET /api/sessions` — 会话列表（id、标题、更新时间）
+- `GET /api/sessions` — 当前访客的会话列表（id、标题、更新时间）
+- `POST /api/access` — 提交访问码，换访问 cookie（2026-10-28）
 - `GET /api/sessions/{id}` — 拉取该会话的完整消息，用于刷新页面后恢复
 - 托管 React 构建产物（`frontend/dist` 挂在 `/`），单容器对外。接口统一加 `/api` 前缀，`/health` 留在根路径给健康检查（2026-10-21）
 - 启动时拉起 MCP server 子进程并完成工具发现
@@ -176,12 +179,18 @@ Harness 需要覆盖的点：
 
 **会话持久化**：
 
-- Postgres + SQLAlchemy（async），两张表：`sessions`（id / title / created_at / updated_at）、`messages`（自增 id / session_id / role / content / tool_calls / tool_call_id / tool_name / is_error / data / created_at）
+- SQLAlchemy（async），同一份代码跑 SQLite（本地）和 Postgres（线上）——`DATABASE_URL` 决定，空则内存（2026-10-28 实现，见 [docs/12](12-going-public.md)）。两张表：`sessions`（id / owner / title / created_at / updated_at）、`messages`（自增 id / session_id / role / content / tool_calls / tool_call_id / tool_name / is_error / data / created_at）
 - 消息存成「OpenAI 格式的超集」：发给 LLM 时只取 role / content / tool_calls / tool_call_id；`tool_name` / `is_error` / `data`（工具的结构化结果）只给前端，用来复现工具调用过程与地图打点。（2026-10-14 修订：原设计的 `tool_results` 列表字段与 loop 产出的消息形状不符）
 - 一轮对话整体入库（`append_messages`），出错的轮次不入库
 - 会话标题：首条用户消息截断即可，不额外调 LLM 生成
 - 建表用 `create_all` 启动时执行，demo 不引入 Alembic
-- 先定义 `SessionStore` 接口，Day 2 用内存实现让 loop 跑起来，Day 4 换 Postgres 实现——接口不变，前端与 loop 都不用动
+- 先定义 `SessionStore` 接口，Day 2 用内存实现让 loop 跑起来，之后换 SQL 实现——接口只加了 `owner` 参数，loop 与前端都不用动
+
+**公网准备**（2026-10-28，见 [docs/12](12-going-public.md)）：
+
+- **访问码**：`ACCESS_CODE` 非空时 `/api/chat`、`/api/sessions` 需要访问 cookie（值是 HMAC，无状态）；`/health` 与静态页面不设门槛
+- **会话隔离**：每个浏览器一个匿名访客 cookie，会话记在它名下；别人的会话一律 404。不做账号系统
+- 尚未做：按 IP 限流、每日 token 预算（访问码挡住了陌生人，但没挡住持码人刷量）
 
 ### 4.5 前端 React ✅
 
@@ -206,12 +215,17 @@ Harness 需要覆盖的点：
 - 单镜像：FastAPI + 静态文件 + 自建 MCP server（stdio 子进程，无需网络配置）
 - `docker-compose.yml` 本地一键起：app + postgres 两个服务，作为部署失败时的兜底演示方式
 
-### 4.8 AWS 部署
+### 4.8 AWS 部署 ⏸ 暂缓（2026-10-28）
+
+> **选型需要重做**：App Runner 自 2026-04-30 起不再接受新客户（AWS 建议改用 ECS Express Mode），下面的原方案对新账号已不可行。
+> 重新部署时的倾向：Lightsail 1 GB + docker compose（app + Caddy 自动 HTTPS），SQLite 放数据卷，快照上传一次；托管容器方案（ECS Express Mode + Neon）贵且快照要随镜像分发。
+> 需要的环境变量还要加上 `SEICHI_DATA_SOURCE=anitabi`：默认的 auto 在缺快照时会悄悄退回 mock。
+
 
 - **选型：ECR + App Runner**。理由：从镜像直接跑、自动 HTTPS、零运维、按需计费，demo 成本几美元
 - **数据库必须在容器外**：App Runner 的文件系统是临时的，重启/重部署就丢，容器内 SQLite 不可行。用托管 Postgres，只需一个连接串环境变量
 - 备选：EC2 + docker compose。更土但出问题时更容易排查，且 Postgres 可以直接跟着 compose 跑
-- 环境变量（LLM key、Langfuse key、地图 key、`DATABASE_URL`）走 App Runner 配置，不进镜像
+- 环境变量（LLM key、Langfuse key、`DATABASE_URL`、`ACCESS_CODE`、`COOKIE_SECURE=true`）走 App Runner 配置，不进镜像
 
 ### 4.9 CI/CD GitHub Actions
 
@@ -239,14 +253,15 @@ Harness 需要覆盖的点：
 | **3** ✅ | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | ✅ 无头浏览器实测：点击提问后流式输出、并行工具转圈、地图打点与路线；刷新后原样恢复；侧栏切换会话。前端 17 个单元测试 |
 | **3.5** ✅ | 真实数据 + 巡礼规划（计划外，用户反馈驱动） | Anitabi 快照（1559 部作品）；地点合并与片区；`plan_pilgrimage`；电车换乘；图文攻略卡片 | ✅ 浏览器实测三种问法（有 / 无出发地与时间），LLM 只调一次规划工具；后端 98、前端 22 个测试 |
 | **3.6** ✅ | Agent 评测（从 Day 6+ 提前） | 25 条用例、规则检查、工具缓存与故障注入、pass^k、对比与重新打分 | ✅ 基线 pass^1 90% / pass^2 84%（规则修正后）；评测发现「换参数重试已挂工具」，加工具熔断后故障类 33% → 100%。🚧 熔断消融待网络稳定时补跑；后端 118 个测试 |
-| **4** | Docker + 持久化 + CI | 多阶段 Dockerfile；compose 起 app + postgres；`SessionStore` 换 Postgres 实现；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
-| **5** | AWS 部署 + 缓冲 | App Runner 上线；域名/HTTPS；**留半天修 bug** | 公网 URL 可访问，三个场景可演示 |
+| **3.7** ✅ | 公网准备：访问码 + 会话隔离 + 持久化（Day 4 的持久化提前） | `AccessConfig` / `VisitorMiddleware`；会话 `owner`；`SqlSessionStore`（SQLite / Postgres）；前端访问码页 | ✅ Postgres 16（docker）实测：无码 401、错码 401、对码 204 + cookie；重启服务后会话还在；另一访客读他人会话 404。后端 133 个测试（另有 5 个 Postgres 用例需 `TEST_DATABASE_URL`） |
+| **4** | Docker + CI | 多阶段 Dockerfile；compose 起 app + postgres；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
+| **5** ⏸ | AWS 部署 + 缓冲 | ~~App Runner 上线~~（已不接受新客户）；域名/HTTPS；**留半天修 bug** | 暂缓：先本地演示，见第一节说明 |
 
 **Langfuse 在 Day 2 就接**，不要留到最后——它是 debug agent loop 最好用的工具，早接早受益。
 
 ## 六、明确不做
 
-- 用户系统 / 登录 / 鉴权（会话持久化但不区分用户，所有会话全局可见）
+- 用户系统 / 登录（~~会话不区分用户、全局可见~~ → 2026-10-28 改为匿名访客 cookie 隔离 + 共享访问码，见 [docs/12](12-going-public.md)；跨设备同步会话仍不做）
 - 数据库迁移工具（Alembic），`create_all` 够用
 - 多语言 UI（界面中文，agent 回答跟随用户语言）
 - 移动端适配（响应式做到手机能看即可）

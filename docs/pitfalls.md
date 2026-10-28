@@ -247,6 +247,27 @@ print(inspect.signature(MCPServer.tool))
 - **解法**：ChatService 收到 error 事件时 `logger.warning`
 - **教训**：把错误"优雅地"交给客户端时，别忘了服务端也要留一份记录，否则线上出问题无从排查
 
+### 托管 Postgres 的连接串报 `unexpected keyword argument 'sslmode'`
+
+- **现象**：把 `postgresql+asyncpg://...?sslmode=disable` 交给 SQLAlchemy，连接时报 `TypeError: connect() got an unexpected keyword argument 'sslmode'`（本地 docker Postgres 16 实测）
+- **根因**：`sslmode` 是 libpq（psycopg2 等 C 驱动）的参数名。asyncpg 是纯 Python 实现，不认 libpq 的参数，它的对应参数叫 `ssl`。SQLAlchemy 把 URL 里的查询参数原样转给驱动的 `connect()`。另外托管平台给的连接串开头是 `postgres://` 或 `postgresql://`，SQLAlchemy 会默认去找同步驱动 psycopg2
+- **解法**：[sql.py](../backend/store/sql.py) 的 `normalize_database_url`：协议头改成 `postgresql+asyncpg://`，`sslmode=` 换成 `ssl=`。平台给的连接串原样填进 `DATABASE_URL` 即可
+- **教训**：「同一个数据库」的连接串在不同驱动之间并不通用。换驱动时查一下它接受哪些连接参数
+
+### SQLite 读回来的时间没有时区
+
+- **现象**：模型里写的是 `DateTime(timezone=True)`、存进去的是 UTC 时间，Postgres 读回来带 `+00:00`，SQLite 读回来却是 naive datetime（`tzinfo=None`）。序列化成 JSON 后没有时区后缀，前端会把它当本地时间
+- **根因**：SQLite 没有日期时间类型，SQLAlchemy 把时间存成字符串，`timezone=True` 对 SQLite 不起作用
+- **解法**：[sql.py](../backend/store/sql.py) 读出时统一补上 UTC（`_utc()`），并用 `test_times_are_utc_aware` 对三种存储一起断言
+- **教训**：「一份 ORM 代码跑两种数据库」不等于行为完全一致。差异点要写成对所有实现都跑的测试
+
+### 测试里手动设 cookie，报 `CookieConflict: Multiple cookies exist`
+
+- **现象**：`client.cookies.set("aoki_access", "forged")` 之后，服务端又下发了同名 cookie，再读 `client.cookies["aoki_access"]` 报 `CookieConflict`
+- **根因**：手动 `set` 的 cookie 没有域名，服务端下发的 cookie 带着 `testserver.local` 域名。cookie jar 按「名字 + 域名 + 路径」区分，于是同名的两个 cookie 共存
+- **解法**：想发一个特定 cookie 时，用请求头 `headers={"cookie": "name=value"}`，不往 jar 里塞；想看服务端发了什么，读响应的 `set-cookie` 头
+- **教训**：测试客户端的 cookie jar 模拟的是浏览器，有域名规则。只想控制「这一次请求带什么」时，直接写请求头最可靠
+
 ---
 
 ## 可观测性

@@ -138,7 +138,7 @@ async with MCPClientPool() as tools:
     yield Components(loop=loop, store=store, tracing=tracing)
 ```
 
-`DATABASE_URL` 配置了但 Postgres 还没实现时，这里会**明确报错**，而不是悄悄退回内存存储。悄悄降级的后果是：你以为数据进了数据库，重启后才发现全丢了。[01 章原则五](01-architecture.md#原则五降级而不是崩溃)说"降级而不是崩溃"，前提是**降级是安全的、诚实的**。配置错误不属于这种情况。
+`build_store` 按 `DATABASE_URL` 选存储：空 → 内存，否则 → [SQL 实现](../backend/store/sql.py)（SQLite 或 Postgres，[12 章](12-going-public.md)）。配置了数据库却连不上时，`store.open()` 抛异常，**启动直接失败**，而不是悄悄退回内存存储。悄悄降级的后果是：你以为数据进了数据库，重启后才发现全丢了。[01 章原则五](01-architecture.md#原则五降级而不是崩溃)说"降级而不是崩溃"，前提是**降级是安全的、诚实的**。配置错误不属于这种情况。
 
 ### deps.py：依赖注入
 
@@ -259,9 +259,11 @@ class StoredMessage(BaseModel):
 
 `data` 从哪来？loop 产出的 `new_messages` 是纯 OpenAI 格式，tool 消息里只有 `content`（给 LLM 看的文本）。结构化的 `data` 在 `tool_result` 事件里。所以 ChatService 在遍历事件时按 `tool_call_id` 记下每个工具的名字和结果，入库时补到对应的 tool 消息上。
 
-这里修改了 Day 1 的设计：原来的 `StoredMessage` 有一个 `tool_results` 列表字段。真正写到这一步才发现，loop 产出的是"每个工具结果一条 tool 消息"的 OpenAI 格式，存成"一条 assistant 消息带一个结果列表"需要来回转换。**跟着数据的真实形状走，比提前设计的结构更好用。** SQLAlchemy 模型（[models.py](../backend/store/models.py)）也同步改了，Day 4 接 Postgres 时直接用。
+这里修改了 Day 1 的设计：原来的 `StoredMessage` 有一个 `tool_results` 列表字段。真正写到这一步才发现，loop 产出的是"每个工具结果一条 tool 消息"的 OpenAI 格式，存成"一条 assistant 消息带一个结果列表"需要来回转换。**跟着数据的真实形状走，比提前设计的结构更好用。** SQLAlchemy 模型（[models.py](../backend/store/models.py)）也同步改了，[12 章](12-going-public.md)接数据库时直接用上了。
 
-**`append_messages` 一次存一整轮**，而不是一条一条存。Postgres 实现里会放在同一个事务中，不会出现"存了工具调用、没存工具结果"的状态。实测 DeepSeek 遇到这种历史会直接拒绝（[06 章](06-harness.md#上下文裁剪)）。
+**`append_messages` 一次存一整轮**，而不是一条一条存。SQL 实现里放在同一个事务中（[sql.py](../backend/store/sql.py) 的 `begin()`），不会出现"存了工具调用、没存工具结果"的状态。实测 DeepSeek 遇到这种历史会直接拒绝（[06 章](06-harness.md#上下文裁剪)）。
+
+会话还有一个 `owner` 字段（访客 id），侧栏只列自己的会话，见 [12 章](12-going-public.md#会话隔离)。
 
 [store/memory.py](../backend/store/memory.py) 是内存实现。它的方法里都没有 `await`，在 asyncio 的单线程模型下天然是原子的，不需要加锁（和 [06 章重复调用检测](06-harness.md#重复调用检测)的道理一样）。`get_messages` 返回列表的**副本**，调用方修改返回值不会影响存储。
 
@@ -290,17 +292,19 @@ event: done         → 4 轮 LLM 调用，11081 tokens，总耗时 13.5 秒
 [test_api.py](../backend/tests/test_api.py) 通过 `create_app(factory)` 注入假 LLM 和假工具，走的是**真实的路由、真实的 SSE 编码、真实的会话存储**：
 
 ```python
-def make_client(llm, tools=None):
+def make_client(llm, tools=None, access_code=""):
     @asynccontextmanager
     async def factory():
         yield Components(loop=AgentLoop(llm, tools or FakeTools(), Harness()),
                          store=InMemorySessionStore(), tracing=Tracing(None))
-    return TestClient(create_app(factory))
+    return TestClient(create_app(factory, AccessConfig(code=access_code)))
 ```
+
+`AccessConfig` 显式传入：测试不受本机 `.env` 里 `ACCESS_CODE` 的影响（访问码见 [12 章](12-going-public.md)）。
 
 测试里自己写了一个 `parse_sse()` 把响应体解析回事件列表，顺便验证了格式：中文没有被转义、`Cache-Control: no-cache` 存在、保活注释能被正确跳过。
 
-覆盖的场景：完整事件流、第二轮把历史发给 LLM（且不含 `data` 这种只给前端的字段）、会话恢复时拿得到工具数据、不存在的会话返回 404（在流开始之前）、空消息返回 422、LLM 出错时本轮不入库。
+覆盖的场景：完整事件流、第二轮把历史发给 LLM（且不含 `data` 这种只给前端的字段）、会话恢复时拿得到工具数据、不存在的会话返回 404（在流开始之前）、空消息返回 422、LLM 出错时本轮不入库。访问码和访客隔离的测试在同一个文件末尾，讲解见 12 章。
 
 [test_app.py](../backend/tests/test_app.py) 则用**真实的** `default_components`：真的拉起三个 MCP 子进程、真的走 lifespan 启动和关闭，只是不调 LLM。它保证组装代码本身是对的。
 
@@ -333,8 +337,11 @@ uvicorn backend.app.main:app --reload
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 curl.exe -N -X POST http://127.0.0.1:8000/api/chat -H "Content-Type: application/json" --data-binary "@req.json"
 
-# 3. 查看会话
-curl.exe http://127.0.0.1:8000/api/sessions
+#    会话按访客 cookie 隔离（12 章）：用 -c/-b 让 curl 存取 cookie，不然每次都是新访客、列表为空
+curl.exe -N -c cookies.txt -b cookies.txt -X POST http://127.0.0.1:8000/api/chat -H "Content-Type: application/json" --data-binary "@req.json"
+
+# 3. 查看会话（同一个 cookie 文件）
+curl.exe -b cookies.txt http://127.0.0.1:8000/api/sessions
 
 # 4. 接口测试（不花 token）
 python -m pytest -v backend/tests/test_api.py backend/tests/test_store.py
@@ -346,7 +353,7 @@ python -m pytest -v backend/tests/test_api.py backend/tests/test_store.py
 
 ## 延伸思考
 
-1. `ChatService.run_turn` 在 `done` 时入库。如果入库本身失败（比如将来 Postgres 连接断了），会发生什么？用户会看到什么？`done` 还应该发吗？
+1. `ChatService.run_turn` 在 `done` 时入库。如果入库本身失败（比如 Postgres 连接断了），会发生什么？用户会看到什么？`done` 还应该发吗？
 2. 前端拿到的 `tool_result` 事件里有完整的 `data`。`list_spots` 返回 500 个地标时，这个事件会很大。应该在哪一层限制？
 3. 现在所有会话对所有人可见（没有用户系统）。如果要加登录，`SessionStore` 接口需要怎么改？ChatService 呢？loop 需要改吗？
 4. 为什么 `GET /sessions/{id}` 返回 `StoredMessage` 的全部字段，而 SSE 的 `done` 事件要过滤掉 `new_messages`？两者的使用场景有什么不同？

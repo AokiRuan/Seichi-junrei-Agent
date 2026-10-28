@@ -30,7 +30,7 @@
 │ store/      │  │ agent/                       │  ← 项目核心
 │ 会话持久化   │  │  loop     主循环（流式） ✅   │
 │ 内存 ✅      │  │  harness  边界策略       ✅   │
-│ Postgres ⏳  │  │  llm      LLM 抽象       ✅   │
+│ SQL 存储 ✅  │  │  llm      LLM 抽象       ✅   │
 │             │  │  mcp_client 工具聚合     ✅   │
 │             │  │  events   对外事件契约   ✅   │
 │             │  │  tracing  Langfuse       ✅   │
@@ -86,7 +86,7 @@ class AgentLoop:
 app/routes ──▶ agent/loop ──▶ agent/llm        (接口)
     │              │     └──▶ agent/mcp_client (接口)
     │              └────────▶ agent/events     (契约)
-    └──────────▶ store/base (接口) ◀── store/memory · store/postgres
+    └──────────▶ store/base (接口) ◀── store/memory · store/sql
 ```
 
 **判断标准**：`agent/` 目录下的文件永远不应该 `import` `app/` 或 `store/` 里的东西。写代码时如果发现需要反向 import，停下来——那是设计出问题了。
@@ -140,7 +140,7 @@ AgentLoop.run()  ──yield AgentEvent──▶  chat.py 翻译成 SSE  ──�
 
 | 接口 | 当前实现 | 将来的实现 | 为什么会变 |
 |---|---|---|---|
-| [`SessionStore`](../backend/store/base.py) | 内存 | Postgres | Day 2 先跑通，Day 4 再持久化 |
+| [`SessionStore`](../backend/store/base.py) | 内存 | SQLite / Postgres（[12 章](12-going-public.md)） | Day 2 先跑通，之后再持久化；接口只加了 `owner` |
 | [`LLMClient`](../backend/agent/llm.py) | DeepSeek | 任意 OpenAI 兼容服务 | DeepSeek 的 tool calling 稳定性是已知风险 |
 | [`SeichiRepository`](../backend/mcp_servers/seichi/repository.py) | 本地 mock | Anitabi API | Anitabi 被限流，且缺坐标（见 [03](03-mcp-server.md)） |
 

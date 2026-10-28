@@ -23,7 +23,7 @@ Aoki-Agent/
 │   │   └── routes/             /api/chat（SSE）与 /api/sessions
 │   ├── agent/                核心：自建 loop、harness、LLM 与 MCP 客户端（见 05~07 章）
 │   ├── cli.py                命令行入口，不经 HTTP 直接和 agent 对话（见 05 章）
-│   ├── store/                会话持久化：接口 + 内存/Postgres 两种实现
+│   ├── store/                会话持久化：接口 + 内存 / SQL（SQLite、Postgres）两种实现
 │   ├── mcp_servers/          三个自建 MCP server
 │   │   ├── seichi/             圣地巡礼，读本地数据（见 03 章）
 │   │   ├── weather/            天气，调 Open-Meteo（见 04 章）
@@ -79,7 +79,7 @@ uv pip install xxx            # ✅
 | 配置 | `pydantic` `pydantic-settings` `python-dotenv` | 数据校验；从环境变量/.env 读配置 |
 | LLM | `openai` | 所有候选 LLM（DeepSeek 等）都兼容 OpenAI 接口，一个 SDK 通吃 |
 | MCP | `mcp>=2.2` | MCP 协议的服务端与客户端 |
-| 持久化 | `sqlalchemy[asyncio]` `asyncpg` | 异步 ORM 与 Postgres 驱动（Day 4 才用） |
+| 持久化 | `sqlalchemy[asyncio]` `asyncpg` `aiosqlite` | 异步 ORM、Postgres 与 SQLite 的异步驱动（[12 章](12-going-public.md)） |
 | 可观测 | `langfuse` | LLM 调用链追踪 |
 | 开发 | `ruff` `pytest` `pytest-asyncio` `httpx` | lint、测试、异步测试、FastAPI 测试客户端的底层 |
 

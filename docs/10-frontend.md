@@ -14,7 +14,7 @@
 
 ### 前端在系统里的位置
 
-前端只认识后端的三个接口，对 LLM、MCP、harness 一无所知：
+前端只认识后端的几个接口（对话、会话列表与详情、访问码），对 LLM、MCP、harness 一无所知：
 
 | 接口 | 用途 |
 |---|---|
@@ -65,7 +65,7 @@ frontend/src/
 ├── api/
 │   ├── types.ts        后端接口的数据形状
 │   ├── sse.ts          SSE 解析器
-│   └── client.ts       三个接口的调用
+│   └── client.ts       接口调用（含访问码）
 ├── chat/
 │   ├── model.ts        界面模型 + applyEvent / historyToItems（纯函数）
 │   ├── useChat.ts      状态与操作（React hook）
@@ -73,6 +73,7 @@ frontend/src/
 ├── map/
 │   └── extract.ts      从工具结果提取地图数据（纯函数）
 ├── components/
+│   ├── AccessGate.tsx  访问码输入页
 │   ├── Sidebar.tsx     会话侧栏
 │   ├── ChatPanel.tsx   消息列表 + 输入框
 │   ├── ToolStep.tsx    一次工具调用的展示
@@ -173,7 +174,9 @@ AbortController 放在 `useRef` 而不是 `useState` 里：它不参与渲染，
 
 **切换会话时先 abort 当前的流。** 否则旧会话还在流式输出，它的事件会被写进新会话的界面。
 
-**会话 404 时的提示。** 当前用的是内存存储（Postgres 在 Day 4），后端一重启会话就没了，网址里的旧 id 会 404。这里给出明确提示并开始新对话，而不是显示一个空白页面。
+**会话 404 时的提示。** 两种情况会 404：用内存存储时后端一重启会话就没了；或者网址是从另一个浏览器拷来的——会话按访客隔离，别人的会话对你来说就是不存在（[12 章](12-going-public.md#会话隔离)）。这里给出明确提示并开始新对话，而不是显示一个空白页面。
+
+**401 时换成访问码页面。** 后端设了访问码时，任何接口返回 401 都会把 `locked` 置为 true，`App` 整个换成 [AccessGate.tsx](../frontend/src/components/AccessGate.tsx)。输对后重新拉侧栏、恢复网址里的会话。前端不保存访问码，靠服务端种下的 HttpOnly cookie 过关，见 [12 章](12-going-public.md#访问码)。
 
 ### 工具过程可视化
 

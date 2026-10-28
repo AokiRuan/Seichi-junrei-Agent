@@ -27,6 +27,7 @@
 - 评测（讲解见 docs/16-evaluation.md）：`python -m evals.run`（会消耗 LLM token，需要 Anitabi 快照；`--only` / `--repeat` / `--label`）；对比 `python -m evals.report A.json B.json`；改检查规则后用 `--rescore` 重新打分，不要为此重跑。改 prompt、工具描述、harness 后跑一次和基线对比
 - 命令行和 agent 对话：`python -m backend.cli "问题"`（会消耗 LLM token）；列出全部工具：`python -m backend.agent.mcp_client`
 - 启动：`uvicorn backend.app.main:app --reload`；接口都在 `/api` 下（`/api/chat`、`/api/sessions`），`/health` 在根路径；手动测接口用 `curl.exe`（PowerShell 的 `curl` 是 `Invoke-WebRequest` 别名），JSON 请求体写文件用 `-Encoding utf8`（`ascii` 会把中文变成 `?`）
+- 公网相关（讲解见 docs/12-going-public.md）：`ACCESS_CODE` 非空时 `/api/chat`、`/api/sessions` 需要先 `POST /api/access` 拿 cookie；会话按访客 cookie 隔离，curl 测接口要带 `-c cookies.txt -b cookies.txt`，否则每次都是新访客。`DATABASE_URL` 空 = 内存，`sqlite+aiosqlite:///aoki.db` = 本地文件，`postgresql://...` = Postgres；Postgres 存储测试：`docker run -d --name aoki-pg -e POSTGRES_USER=aoki -e POSTGRES_PASSWORD=aoki -e POSTGRES_DB=aoki -p 5432:5432 postgres:16-alpine` 后设 `TEST_DATABASE_URL=postgresql+asyncpg://aoki:aoki@localhost:5432/aoki`（Docker Desktop 需先启动）
 - 测试替身在 `backend/tests/fakes.py`；`conftest.py` 清空了 Langfuse key，测试永不往线上写数据，并固定 `SEICHI_DATA_SOURCE=mock`
 - 圣地数据：`python -m backend.mcp_servers.seichi.anitabi` 生成 Anitabi 本地快照（不进 git，**不要频繁执行**：对方有 Cloudflare 限流）。`SEICHI_DATA_SOURCE` = auto（默认，有快照用快照）/ anitabi / mock，只能设成真正的环境变量（MCP 子进程经 `PASSTHROUGH_ENV` 拿到它，`.env` 里写了无效）
 - 后台启动 uvicorn 前先确认 8000 端口空闲，启动后看日志有没有 bind 失败——否则测的是旧进程里的旧代码。报 `WinError 10013` 是端口被 Windows 动态保留了（`netsh interface ipv4 show excludedportrange protocol=tcp`），临时换 `--port 8800`
