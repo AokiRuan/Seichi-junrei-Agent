@@ -17,6 +17,9 @@ asyncpg
 # 可观测性（Day 2 就接）
 langfuse
 
+# 评测用例（evals/cases.yaml）
+pyyaml
+
 # 开发
 ruff
 pytest

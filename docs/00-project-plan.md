@@ -219,11 +219,15 @@ Harness 需要覆盖的点：
 - **main 推送**：build 镜像 → push ECR → App Runner 自动拉取新镜像部署
 - AWS 凭证走 GitHub OIDC，不存长期 key
 
-### 4.10 Agent 评测（Day 6+，不在 demo 范围）
+### 4.10 Agent 评测 ✅（2026-10-27 提前做，原定 Day 6+）
 
-- **评测集**：20～30 条 query，每条标注期望的工具调用序列与期望命中的圣地
-- **指标**：工具选择准确率、圣地召回率、LLM-as-judge 评回答质量
-- **工具**：Langfuse Datasets + Experiments，结果与 trace 关联，改 prompt 后可对比回归
+详见 [docs/16](16-evaluation.md)。和最初计划的差异：
+
+- **评测集**：25 条、8 类（含多轮与故障注入）。~~标注精确的工具调用序列~~ → 改成 must_call / must_not_call / order，精确序列太脆（并行调用顺序不定、先查哪个都对）
+- **检查**：参考 TravelPlanner 分通用约束与用例约束，参考 τ-bench 优先看工具参数与结构化行程（终态）而不是回答文字。全部是确定性规则
+- **指标**：交付率、pass^1、pass^k、检查通过率、无效工具调用率、token / 延迟
+- ~~LLM-as-judge~~ 暂缓：规则检查都通过后再考虑，先用人工标注校准 judge
+- ~~Langfuse Datasets + Experiments~~ 暂缓：结果存本地 JSON（可 diff、可重新打分、不依赖网络、方便接 CI）；trace 用 `--trace` 照常上报
 - 评测框架搭好后，harness 的每次改动都有量化反馈——这是评测的真正价值
 
 ## 五、五天计划
@@ -234,6 +238,7 @@ Harness 需要覆盖的点：
 | **2** ✅ | Agent loop + 后端 | LLM 客户端（流式）、MCP 客户端、loop + harness、system prompt、内存 SessionStore、FastAPI SSE、Langfuse、CLI | ✅ curl 流式拿到带 3 次工具调用的回答（首字 0.8s）、多轮续聊正常；✅ Langfuse 里看到完整 trace 树 |
 | **3** ✅ | React 前端 | 聊天 + 地图双面板；SSE 消费；工具过程可视化；打点；会话侧栏 | ✅ 无头浏览器实测：点击提问后流式输出、并行工具转圈、地图打点与路线；刷新后原样恢复；侧栏切换会话。前端 17 个单元测试 |
 | **3.5** ✅ | 真实数据 + 巡礼规划（计划外，用户反馈驱动） | Anitabi 快照（1559 部作品）；地点合并与片区；`plan_pilgrimage`；电车换乘；图文攻略卡片 | ✅ 浏览器实测三种问法（有 / 无出发地与时间），LLM 只调一次规划工具；后端 98、前端 22 个测试 |
+| **3.6** ✅ | Agent 评测（从 Day 6+ 提前） | 25 条用例、规则检查、工具缓存与故障注入、pass^k、对比与重新打分 | ✅ 基线 pass^1 90% / pass^2 84%（规则修正后）；评测发现「换参数重试已挂工具」，加工具熔断后故障类 33% → 100%。🚧 熔断消融待网络稳定时补跑；后端 118 个测试 |
 | **4** | Docker + 持久化 + CI | 多阶段 Dockerfile；compose 起 app + postgres；`SessionStore` 换 Postgres 实现；GitHub Actions PR 检查 + 镜像推 ECR | `docker compose up` 一键可用，重启容器会话还在；PR 有绿勾；ECR 有镜像 |
 | **5** | AWS 部署 + 缓冲 | App Runner 上线；域名/HTTPS；**留半天修 bug** | 公网 URL 可访问，三个场景可演示 |
 
@@ -247,7 +252,7 @@ Harness 需要覆盖的点：
 - 移动端适配（响应式做到手机能看即可）
 - 语音
 - 自托管 Langfuse
-- 评测（Day 6+）
+- ~~评测（Day 6+）~~ 已提前做完基础版（4.10）；LLM-as-judge、Langfuse Experiments 仍不做
 
 ## 七、风险与预案
 
@@ -283,7 +288,7 @@ Aoki-Agent/
 │       ├── weather/      天气 MCP server（Open-Meteo）
 │       └── route/        路线 MCP server（OSRM + Nominatim）
 ├── frontend/             React (Vite + TS)
-├── evals/                评测（Day 6+）
+├── evals/                评测：用例、检查、指标（docs/16）
 ├── docs/                 学习手册：计划、架构、逐模块讲解、踩坑日志
 ├── learn/                学习期代码（原 core/ agent/ tools/ tests/）
 ├── CLAUDE.md             项目约定（含「代码与文档同步」规则）

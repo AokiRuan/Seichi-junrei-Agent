@@ -20,3 +20,7 @@ frontend/dist/
 # IDE
 .vscode/
 .idea/
+
+# 评测：结果与工具缓存只留在本地（缓存里有 Anitabi 数据，同上不再分发）
+evals/results/
+evals/.cache/

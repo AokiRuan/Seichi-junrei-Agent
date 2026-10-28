@@ -24,6 +24,7 @@
 - venv 由 uv 创建，**没有 pip**：装包用 `uv pip install`；国内网络加 `--index-url https://pypi.tuna.tsinghua.edu.cn/simple`
 - Windows 终端需 `$env:PYTHONIOENCODING = "utf-8"`，否则打印 emoji 崩溃
 - 测试：`python -m pytest`（配置见 pytest.ini，`asyncio_mode = auto`；打真实外部 API 的测试标记为 `network`，默认不跑）
+- 评测（讲解见 docs/16-evaluation.md）：`python -m evals.run`（会消耗 LLM token，需要 Anitabi 快照；`--only` / `--repeat` / `--label`）；对比 `python -m evals.report A.json B.json`；改检查规则后用 `--rescore` 重新打分，不要为此重跑。改 prompt、工具描述、harness 后跑一次和基线对比
 - 命令行和 agent 对话：`python -m backend.cli "问题"`（会消耗 LLM token）；列出全部工具：`python -m backend.agent.mcp_client`
 - 启动：`uvicorn backend.app.main:app --reload`；接口都在 `/api` 下（`/api/chat`、`/api/sessions`），`/health` 在根路径；手动测接口用 `curl.exe`（PowerShell 的 `curl` 是 `Invoke-WebRequest` 别名），JSON 请求体写文件用 `-Encoding utf8`（`ascii` 会把中文变成 `?`）
 - 测试替身在 `backend/tests/fakes.py`；`conftest.py` 清空了 Langfuse key，测试永不往线上写数据，并固定 `SEICHI_DATA_SOURCE=mock`

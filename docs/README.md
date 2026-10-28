@@ -12,7 +12,7 @@
 | 03 | [MCP Server：圣地巡礼](03-mcp-server.md) | MCP 协议、stdio 传输、给 LLM 设计工具、Repository 模式、先探测再写代码、真实数据快照与地点合并 | ✅ |
 | 04 | [外部 API 型 MCP：天气与路线](04-external-mcp-servers.md) | 网络失败与降级、依赖注入测试、参数约束、路线排序算法、公共服务使用政策 | ✅ |
 | 05 | [Agent Loop](05-agent-loop.md) | tool calling 消息协议、自建循环、流式分片拼接、system prompt、用假 LLM 测试、真实运行的发现 | ✅ |
-| 06 | [Harness](06-harness.md) | 无状态策略、迭代上限与强制收尾、重复调用检测、上下文裁剪 | ✅ |
+| 06 | [Harness](06-harness.md) | 无状态策略、迭代上限与强制收尾、重复调用检测、工具熔断、上下文裁剪 | ✅ |
 | 07 | [MCP Client](07-mcp-client.md) | 多 server 聚合、子进程环境变量、三种调用结局、同一 task 的生命周期约束 | ✅ |
 | 08 | [FastAPI 与 SSE](08-fastapi-sse.md) | SSE 协议、lifespan 与应用工厂、三层分工、流式接口的校验时机、会话存储格式、接口测试 | ✅ |
 | 09 | [可观测性：Langfuse](09-langfuse.md) | trace 的结构、装饰器模式接入、Langfuse 不可达时的行为、读懂一个真实 trace | ✅ |
@@ -22,7 +22,7 @@
 | 13 | Docker | 多阶段构建、compose | ⏳ Day 4 |
 | 14 | CI/CD | GitHub Actions、OIDC | ⏳ Day 4 |
 | 15 | AWS 部署 | ECR + App Runner | ⏳ Day 5 |
-| 16 | Agent 评测 | 评测集、指标、Langfuse Experiments | ⏳ Day 6+ |
+| 16 | [Agent 评测](16-evaluation.md) | 参考 TravelPlanner / τ-bench 的检查与指标、工具缓存与故障注入、生成与打分分离、基线结果与发现 | ✅ |
 | — | [踩坑日志](pitfalls.md) | 开发中遇到的真实问题、根因与解法 | 持续更新 |
 
 建议先读 01 建立全局图，再按编号顺序读。每章都可以对照代码看——文中的文件链接可以直接点开。

@@ -1,0 +1,242 @@
+# 评测任务集。讲解见 docs/16-evaluation.md。
+#
+# 每条用例：
+#   id / category / turns（多轮对话按顺序发，检查只针对最后一轮）
+#   faults：故障注入，{工具名: 返回给 LLM 的错误文字}，该工具在这条用例里一律失败
+#   expect：这条用例的「硬约束」。所有用例还会自动做一组通用检查（见 evals/checks.py）
+#
+# expect 的写法：
+#   tools.must_call / must_not_call：工具名列表
+#   tools.order：这些工具的首次调用要按这个顺序出现
+#   tools.max_calls：最后一轮的工具调用总数上限；tools.max_per_tool：{工具名: 上限}
+#   args.<工具名>.<参数>：至少有一次该工具调用的参数全部满足。值可以是
+#       具体值（相等）、{one_of: [...]}、{range: [下限, 上限]}、{present: true/false}
+#       "@date:+1"（评测时间的明天）、"@date:sat"（评测时间之后最近的周六），格式 YYYYMMDD
+#   plan.ok：最后一轮有成功的 plan_pilgrimage 结果
+#   plan.start_near：[纬度, 经度, 公里]，行程起点要在这个范围内（检验 geocode 有没有查对）
+#   plan.min_stops：至少几站
+#   plan.area_changed：片区和上一轮的规划不同（多轮「换个地方」）
+#   answer.contains_any / contains_all / not_contains：关键词
+#   answer.asks_question：回答里有问句（澄清）
+#   answer.language：zh / ja / en（默认 zh）
+#   answer.mentions_stops：至少提到几个行程里真实存在的站点
+
+cases:
+  # ---------------------------------------------------------------- 查圣地
+  - id: lookup-lycoris
+    category: lookup
+    turns: ["《莉可丽丝》的圣地在哪？"]
+    expect:
+      tools: {must_call: [search_anime, list_spots], must_not_call: [plan_route], order: [search_anime, list_spots]}
+      args: {list_spots: {anime_id: 364450}}
+
+  - id: lookup-ja
+    category: lookup
+    turns: ["ぼっち・ざ・ろっく！の聖地はどこですか？"]
+    expect:
+      tools: {must_call: [search_anime, list_spots]}
+      args: {list_spots: {anime_id: 328609}}
+      answer: {language: ja}
+
+  - id: lookup-en
+    category: lookup
+    turns: ["Where are the real-life locations from Your Name?"]
+    expect:
+      tools: {must_call: [search_anime, list_spots]}
+      args: {list_spots: {anime_id: 160209}}
+      answer: {language: en}
+
+  - id: lookup-near-station
+    category: lookup
+    turns: ["灌篮高手在镰仓高校前站附近有哪些圣地？"]
+    expect:
+      tools: {must_call: [search_anime, geocode, list_spots]}
+      args: {list_spots: {anime_id: 1608, near_lat: {range: [35.25, 35.36]}}}
+
+  - id: lookup-sequels
+    category: lookup
+    turns: ["上低音号的圣地有哪些？"]
+    expect:
+      # 有 1/2/3 期和剧场版。prompt 规定标题完全对应的直接用、分不清再问——这里只要求别选错作品
+      tools: {must_call: [search_anime]}
+      args: {search_anime: {title: {present: true}}}
+      answer: {contains_any: ["上低音号"]}
+
+  # ---------------------------------------------------------------- 天气
+  - id: weather-kamakura
+    category: weather
+    turns: ["这周末去镰仓巡礼灌篮高手，天气怎么样？"]
+    expect:
+      tools: {must_call: [get_weather_forecast]}
+      args: {get_weather_forecast: {lat: {range: [35.25, 35.36]}, lng: {range: [139.45, 139.6]}}}
+
+  - id: weather-uji
+    category: weather
+    turns: ["明天去宇治巡礼上低音号，会下雨吗？"]
+    expect:
+      tools: {must_call: [get_weather_forecast]}
+      args: {get_weather_forecast: {lat: {range: [34.85, 34.95]}, lng: {range: [135.75, 135.85]}}}
+
+  # ---------------------------------------------------------------- 规划巡礼：信息完整
+  - id: plan-bocchi-shinjuku
+    category: plan_full
+    turns: ["我周六上午 10 点从新宿出发，有 4 个小时，想去孤独摇滚的圣地巡礼"]
+    expect:
+      tools:
+        must_call: [search_anime, geocode, plan_pilgrimage]
+        must_not_call: [list_spots, plan_route]
+        order: [geocode, plan_pilgrimage]
+      args:
+        plan_pilgrimage: {anime_id: 328609, time_budget_min: 240, date: "@date:sat", start_time: "10:00"}
+      plan: {ok: true, start_near: [35.69, 139.70, 3], min_stops: 3}
+      answer: {not_contains: ["含往返", "包括返程", "含返程"], mentions_stops: 2}
+
+  - id: plan-euph-kyoto-station
+    category: plan_full
+    turns: ["我在京都站，下午有 3 个小时，想去吹响吧上低音号的圣地"]
+    expect:
+      tools: {must_call: [geocode, plan_pilgrimage], must_not_call: [plan_route]}
+      args:
+        plan_pilgrimage: {anime_id: {one_of: [115908, 152091, 283643, 216372]}, time_budget_min: 180}
+      plan: {ok: true, start_near: [34.985, 135.758, 3], min_stops: 2}
+      answer: {mentions_stops: 1}
+
+  - id: plan-slamdunk-day
+    category: plan_full
+    turns: ["明天从镰仓站出发玩一整天，灌篮高手的圣地怎么安排？"]
+    expect:
+      tools: {must_call: [geocode, plan_pilgrimage]}
+      args:
+        plan_pilgrimage: {anime_id: 1608, time_budget_min: {range: [360, 600]}, date: "@date:+1"}
+      plan: {ok: true, start_near: [35.319, 139.550, 3]}
+
+  - id: plan-yurucamp-2h
+    category: plan_full
+    turns: ["从甲府站出发，只有 2 小时，摇曳露营能去哪些圣地？"]
+    expect:
+      tools: {must_call: [geocode, plan_pilgrimage]}
+      args:
+        plan_pilgrimage: {anime_id: {one_of: [207195, 148732]}, time_budget_min: 120}
+      plan: {ok: true, start_near: [35.667, 138.569, 3]}
+
+  - id: plan-hyouka-halfday
+    category: plan_full
+    turns: ["下周去高山，冰菓的圣地给我排个半天的路线"]
+    expect:
+      tools: {must_call: [plan_pilgrimage], must_not_call: [plan_route]}
+      args:
+        plan_pilgrimage: {anime_id: 27364, time_budget_min: {range: [180, 300]}}
+      plan: {ok: true, min_stops: 3}
+
+  - id: plan-en-tokyo-station
+    category: plan_full
+    turns: ["I'm at Tokyo Station and have 3 hours. Plan a Lycoris Recoil pilgrimage for me."]
+    expect:
+      tools: {must_call: [geocode, plan_pilgrimage]}
+      args:
+        plan_pilgrimage: {anime_id: 364450, time_budget_min: 180}
+      plan: {ok: true, start_near: [35.681, 139.767, 3]}
+      answer: {language: en, not_contains: ["round trip", "round-trip"]}
+
+  - id: plan-with-weather
+    category: plan_full
+    turns: ["我周六从宇治站出发，玩半天上低音号的圣地，顺便看看那天天气"]
+    expect:
+      tools: {must_call: [geocode, plan_pilgrimage, get_weather_forecast]}
+      args:
+        plan_pilgrimage: {date: "@date:sat"}
+      plan: {ok: true, start_near: [34.894, 135.807, 3]}
+
+  # ---------------------------------------------------------------- 规划巡礼：信息不全（不该先追问）
+  - id: plan-bocchi-minimal
+    category: plan_minimal
+    turns: ["想去孤独摇滚的圣地巡礼"]
+    expect:
+      tools: {must_call: [plan_pilgrimage], must_not_call: [geocode, plan_route]}
+      args: {plan_pilgrimage: {anime_id: 328609, start_lat: {present: false}}}
+      plan: {ok: true, min_stops: 3}
+      # 工具按半天规划并写进了 assumptions，回答里要提一句
+      answer: {contains_any: ["半天", "4 小时", "4小时", "四小时", "240"]}
+
+  - id: plan-kon-guide
+    category: plan_minimal
+    turns: ["给我一份轻音少女的巡礼攻略"]
+    expect:
+      tools: {must_call: [plan_pilgrimage], must_not_call: [plan_route]}
+      args: {plan_pilgrimage: {anime_id: 1424}}
+      plan: {ok: true}
+      answer: {mentions_stops: 1}
+
+  # ---------------------------------------------------------------- 澄清 / 查不到 / 超出能力
+  - id: clarify-no-anime
+    category: clarify
+    turns: ["我想去圣地巡礼，帮我安排一下"]
+    expect:
+      tools: {must_not_call: [plan_pilgrimage, plan_route]}
+      answer: {asks_question: true}
+
+  - id: notfound-fictional
+    category: not_found
+    turns: ["我想去《星之彼端的猫咪侦探社》的圣地巡礼"]
+    expect:
+      tools: {must_call: [search_anime], must_not_call: [list_spots, plan_pilgrimage, plan_route]}
+      answer: {contains_any: ["没有", "未找到", "找不到", "没找到", "暂无", "查不到"]}
+
+  - id: out-of-scope-ticket
+    category: not_found
+    turns: ["帮我订一张周六东京到京都的新干线票"]
+    expect:
+      tools: {must_not_call: [plan_pilgrimage, plan_route]}
+      answer: {contains_any: ["无法", "不能", "没法", "不支持", "做不到", "帮不上", "帮不了", "办不到"]}
+
+  # ---------------------------------------------------------------- 多轮
+  - id: multi-switch-area
+    category: multi_turn
+    turns: ["想去孤独摇滚的圣地巡礼", "换一片区域吧"]
+    expect:
+      tools: {must_call: [plan_pilgrimage]}
+      args: {plan_pilgrimage: {area_id: {present: true}}}
+      plan: {ok: true, area_changed: true}
+
+  - id: multi-weather-followup
+    category: multi_turn
+    turns: ["我周六上午从新宿出发，有 4 小时，想去孤独摇滚的圣地", "那天天气怎么样？"]
+    expect:
+      tools: {must_call: [get_weather_forecast], must_not_call: [plan_pilgrimage, search_anime]}
+
+  - id: multi-budget-change
+    category: multi_turn
+    turns: ["想去灌篮高手的圣地巡礼", "我其实只有一个半小时"]
+    expect:
+      tools: {must_call: [plan_pilgrimage]}
+      args: {plan_pilgrimage: {anime_id: 1608, time_budget_min: 90}}
+      plan: {ok: true}
+
+  # ---------------------------------------------------------------- 故障注入
+  - id: fault-geocode-down
+    category: fault
+    turns: ["我周六上午 10 点从新宿出发，有 4 个小时，想去孤独摇滚的圣地巡礼"]
+    faults: {geocode: "工具 geocode 调用失败（TimeoutError）"}
+    expect:
+      # 查不到出发地坐标也应该继续规划（不带起点，或说明后不带起点），而不是卡住
+      tools: {must_call: [plan_pilgrimage], max_per_tool: {geocode: 2}}
+      plan: {ok: true}
+
+  - id: fault-plan-down
+    category: fault
+    turns: ["想去孤独摇滚的圣地巡礼"]
+    faults: {plan_pilgrimage: "工具 plan_pilgrimage 调用失败（TimeoutError）"}
+    expect:
+      tools: {max_per_tool: {plan_pilgrimage: 2}}
+      answer: {contains_any: ["暂时", "失败", "无法", "不可用", "出错", "超时", "没能"]}
+
+  - id: fault-weather-down
+    category: fault
+    turns: ["这周末去镰仓巡礼，天气怎么样？"]
+    faults: {get_weather_forecast: "工具 get_weather_forecast 调用失败（TimeoutError）"}
+    expect:
+      tools: {max_per_tool: {get_weather_forecast: 2}}
+      # 查不到就不能编：不该出现具体温度
+      answer:
+        contains_any: ["暂时", "失败", "无法", "不可用", "出错", "超时", "查不到", "没能", "拿不到"]
+        not_contains: ["℃", "°C", "降水概率"]
