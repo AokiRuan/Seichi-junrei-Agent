@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from backend.agent.harness import Harness
 from backend.agent.loop import AgentLoop
 from backend.agent.tracing import Tracing
+from backend.app.access import ACCESS_COOKIE, VISITOR_COOKIE, AccessConfig
 from backend.app.components import Components
 from backend.app import main
 from backend.app.main import create_app
@@ -16,7 +17,7 @@ from backend.store.memory import InMemorySessionStore
 from backend.tests.fakes import FakeLLM, FakeTools, answer, call, with_tools
 
 
-def make_client(llm, tools=None):
+def make_client(llm, tools=None, access_code=""):
     store = InMemorySessionStore()
 
     @asynccontextmanager
@@ -24,7 +25,8 @@ def make_client(llm, tools=None):
         loop = AgentLoop(llm, tools or FakeTools(), Harness())
         yield Components(loop=loop, store=store, tracing=Tracing(None))
 
-    return TestClient(create_app(factory))
+    # 显式传 AccessConfig：不受本机 .env 里 ACCESS_CODE 的影响
+    return TestClient(create_app(factory, AccessConfig(code=access_code)))
 
 
 def parse_sse(raw: str) -> list[tuple[str, dict]]:
@@ -147,3 +149,91 @@ def test_no_frontend_build_api_still_works(tmp_path, monkeypatch):
     with make_client(FakeLLM()) as client:
         assert client.get("/").status_code == 404
         assert client.get("/api/sessions").status_code == 200
+
+
+# ---------------------------------------------------------------- 访问码与访客隔离（docs/12-going-public.md）
+
+
+def test_sessions_are_isolated_per_visitor():
+    llm = FakeLLM(answer("A 的回答"), answer("B 的回答"))
+    with make_client(llm) as client:
+        sid_a = chat(client, "我是 A")[0][1]["session_id"]
+        visitor_a = client.cookies[VISITOR_COOKIE]
+        assert [s["id"] for s in client.get("/api/sessions").json()] == [sid_a]
+        # owner 只在服务端用，不出现在响应里
+        assert "owner" not in client.get("/api/sessions").json()[0]
+        assert "owner" not in client.get(f"/api/sessions/{sid_a}").json()
+
+        client.cookies.clear()  # 换一个浏览器
+        assert client.get("/api/sessions").json() == []
+        assert client.cookies[VISITOR_COOKIE] != visitor_a  # 新访客拿到新 id
+        # 知道别人的会话 id 也读不到、续不上——和不存在一样是 404
+        assert client.get(f"/api/sessions/{sid_a}").status_code == 404
+        assert client.post("/api/chat", json={"message": "偷看", "session_id": sid_a}).status_code == 404
+        chat(client, "我是 B")
+        assert [s["title"] for s in client.get("/api/sessions").json()] == ["我是 B"]
+
+
+def test_malformed_visitor_cookie_is_replaced():
+    with make_client(FakeLLM()) as client:
+        r = client.get("/api/sessions", headers={"cookie": f"{VISITOR_COOKIE}=short"})
+        assert r.status_code == 200
+        issued = r.headers["set-cookie"].split(";")[0].split("=", 1)[1]
+        assert len(issued) == 32
+
+
+def test_visitor_cookie_only_issued_under_api(tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "FRONTEND_DIST", tmp_path / "missing")
+    with make_client(FakeLLM()) as client:
+        r = client.get("/health")
+        assert "set-cookie" not in r.headers
+        r = client.get("/api/sessions")
+        cookie = r.headers["set-cookie"]
+        assert "HttpOnly" in cookie and "SameSite=lax" in cookie
+
+
+def test_access_code_gates_api():
+    llm = FakeLLM(answer("你好"))
+    with make_client(llm, access_code="sakura-2026") as client:
+        assert client.get("/api/sessions").status_code == 401
+        r = client.post("/api/chat", json={"message": "hi"})
+        assert r.status_code == 401 and r.json()["detail"] == "需要访问码"
+        assert client.get("/health").status_code == 200  # 健康检查不设门槛，部署平台要探活
+
+        assert client.post("/api/access", json={"code": "wrong"}).status_code == 401
+        assert ACCESS_COOKIE not in client.cookies
+        # 伪造的 cookie 不行
+        assert client.get("/api/sessions", headers={"cookie": f"{ACCESS_COOKIE}=forged"}).status_code == 401
+
+        r = client.post("/api/access", json={"code": "sakura-2026"})
+        assert r.status_code == 204
+        assert "sakura" not in client.cookies[ACCESS_COOKIE]  # cookie 里是 HMAC，不是访问码本身
+        assert client.get("/api/sessions").json() == []
+        assert names(chat(client, "hi"))[-1] == "done"
+
+
+def test_rejected_chat_creates_no_session():
+    """访问码检查（路由级依赖）必须先于 resolve_chat_session（会新建会话）执行。"""
+    store = InMemorySessionStore()
+
+    @asynccontextmanager
+    async def factory():
+        yield Components(loop=AgentLoop(FakeLLM(), FakeTools(), Harness()), store=store, tracing=Tracing(None))
+
+    with TestClient(create_app(factory, AccessConfig(code="x"))) as client:
+        assert client.post("/api/chat", json={"message": "hi"}).status_code == 401
+    assert store._sessions == {}
+
+
+def test_changing_access_code_invalidates_old_cookie():
+    with make_client(FakeLLM(), access_code="old") as client:
+        client.post("/api/access", json={"code": "old"})
+        old_cookie = client.cookies[ACCESS_COOKIE]
+    with make_client(FakeLLM(), access_code="new") as client:
+        assert client.get("/api/sessions", headers={"cookie": f"{ACCESS_COOKIE}={old_cookie}"}).status_code == 401
+
+
+def test_access_endpoint_is_noop_when_disabled():
+    with make_client(FakeLLM()) as client:
+        assert client.post("/api/access", json={"code": "anything"}).status_code == 204
+        assert ACCESS_COOKIE not in client.cookies

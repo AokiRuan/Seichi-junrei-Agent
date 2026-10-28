@@ -13,8 +13,14 @@ class Settings(BaseSettings):
     llm_model: str = "deepseek-chat"
     llm_base_url: str = "https://api.deepseek.com"
 
-    # 数据库。为空时回退到内存 store，方便本地不起 postgres 也能开发
+    # 数据库。为空时回退到内存 store，方便本地不起数据库也能开发。
+    # sqlite+aiosqlite:///aoki.db（本地文件）或 postgresql://...（线上），见 docs/12-going-public.md
     database_url: str = ""
+
+    # 访问码。为空 = 不设门槛（本地开发）；公网部署时必须设置，否则谁都能消耗你的 LLM 额度
+    access_code: str = ""
+    # cookie 只走 HTTPS。线上（HTTPS）设为 true；本地是 http，设了浏览器就不会回传 cookie
+    cookie_secure: bool = False
 
     # Langfuse（未配置时静默跳过）
     langfuse_public_key: str = ""

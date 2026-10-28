@@ -16,6 +16,7 @@ from backend.agent.mcp_client import MCPClientPool
 from backend.agent.tracing import Tracing
 from backend.store.base import SessionStore
 from backend.store.memory import InMemorySessionStore
+from backend.store.sql import SqlSessionStore
 
 from .config import Settings
 
@@ -28,10 +29,10 @@ class Components:
 
 
 def build_store(settings: Settings) -> SessionStore:
+    # 配置了 DATABASE_URL 却连不上时，启动直接失败（open() 抛异常），而不是悄悄退回内存——
+    # 那样数据会在重启后丢失，而你以为它存进了数据库
     if settings.database_url:
-        # Day 4 接入 PostgresSessionStore。配置了却没实现时明确报错，
-        # 而不是悄悄退回内存——那样数据会在重启后丢失，而你以为它存进了数据库
-        raise RuntimeError("DATABASE_URL 已配置，但 Postgres 存储将在 Day 4 实现。请先留空 DATABASE_URL。")
+        return SqlSessionStore(settings.database_url)
     return InMemorySessionStore()
 
 
@@ -43,6 +44,7 @@ async def default_components(settings: Settings) -> AsyncIterator[Components]:
     )
     llm = LLMClient(settings.llm_model, settings.llm_api_key, settings.llm_base_url)
     store = build_store(settings)
+    await store.open()
     try:
         async with MCPClientPool() as tools:
             loop = AgentLoop(
@@ -52,4 +54,5 @@ async def default_components(settings: Settings) -> AsyncIterator[Components]:
             )
             yield Components(loop=loop, store=store, tracing=tracing)
     finally:
+        await store.close()
         tracing.shutdown()

@@ -30,14 +30,28 @@ class ChatService:
     def store(self):
         return self._c.store
 
-    async def open_session(self, session_id: str | None, first_message: str) -> StoredSession:
-        """取已有会话；session_id 为空时新建。不存在时抛 SessionNotFound。"""
+    # ---- 会话归属：所有按 id 读会话的入口都经过 _owned，HTTP 与 CLI 一致。讲解见 docs/12-going-public.md
+
+    async def _owned(self, owner: str, session_id: str) -> StoredSession:
+        """取属于 owner 的会话。别人的会话和不存在的会话一样抛 SessionNotFound（对外都是 404）：
+        返回 403 等于告诉对方「这个 id 存在」。"""
+        session = await self._c.store.get_session(session_id)
+        if session is None or session.owner != owner:
+            raise SessionNotFound(session_id)
+        return session
+
+    async def open_session(self, owner: str, session_id: str | None, first_message: str) -> StoredSession:
+        """取已有会话；session_id 为空时新建。不存在或不属于 owner 时抛 SessionNotFound。"""
         if session_id:
-            session = await self._c.store.get_session(session_id)
-            if session is None:
-                raise SessionNotFound(session_id)
-            return session
-        return await self._c.store.create_session(_make_title(first_message))
+            return await self._owned(owner, session_id)
+        return await self._c.store.create_session(_make_title(first_message), owner)
+
+    async def list_sessions(self, owner: str) -> list[StoredSession]:
+        return await self._c.store.list_sessions(owner)
+
+    async def get_history(self, owner: str, session_id: str) -> tuple[StoredSession, list[StoredMessage]]:
+        session = await self._owned(owner, session_id)
+        return session, await self._c.store.get_messages(session_id)
 
     async def run_turn(self, session: StoredSession, user_text: str) -> AsyncIterator[AgentEvent]:
         history = await self._c.store.get_messages(session.id)

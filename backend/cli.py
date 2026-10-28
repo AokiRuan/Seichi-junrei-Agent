@@ -18,6 +18,9 @@ from backend.app.chat_service import ChatService
 from backend.app.components import default_components
 from backend.app.config import settings
 
+# CLI 的会话都记在这个固定访客名下（浏览器访客的 id 是随机串，不会和它重名）
+CLI_OWNER = "cli"
+
 
 class Renderer:
     """把事件流画到终端上。流式文字逐片打印，不换行。"""
@@ -62,7 +65,7 @@ async def main(argv: list[str]) -> None:
         async def ask(question: str) -> None:
             nonlocal session
             # 第一轮新建会话，之后沿用：多轮对话的历史由 store 负责
-            session = session or await service.open_session(None, question)
+            session = session or await service.open_session(CLI_OWNER, None, question)
             render = Renderer()
             async for event in service.run_turn(session, question):
                 render(event)

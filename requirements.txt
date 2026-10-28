@@ -10,9 +10,11 @@ openai
 # MCP —— 必须 2.x：FastMCP 已改名为 MCPServer，网上多数教程是 1.x 写法
 mcp>=2.2
 
-# 持久化（Day 4）
+# 持久化（SQLite / Postgres，见 docs/12-going-public.md）
 sqlalchemy[asyncio]
 asyncpg
+# 本地持久化与存储测试（DATABASE_URL=sqlite+aiosqlite:///...）
+aiosqlite
 
 # 可观测性（Day 2 就接）
 langfuse

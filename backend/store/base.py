@@ -1,7 +1,7 @@
-"""SessionStore 接口。讲解见 docs/08-fastapi-sse.md。
+"""SessionStore 接口。讲解见 docs/08-fastapi-sse.md、docs/12-going-public.md。
 
-Day 2 用 memory.py 的实现让服务先跑起来，Day 4 换成 postgres.py。
-接口不变，routes 与 loop 都不用动。
+两种实现：memory.py（开发、测试）和 sql.py（SQLite / Postgres，持久化）。
+routes 与 loop 只依赖这个接口，换实现不用动它们。
 """
 from __future__ import annotations
 
@@ -50,6 +50,8 @@ class StoredSession(BaseModel):
     title: str
     created_at: datetime
     updated_at: datetime
+    # 会话属于哪个访客（浏览器 cookie 里的匿名 id，CLI 是固定值）。只在服务端用，不发给前端
+    owner: str = ""
 
 
 class SessionNotFound(KeyError):
@@ -57,15 +59,22 @@ class SessionNotFound(KeyError):
 
 
 class SessionStore(ABC):
-    @abstractmethod
-    async def create_session(self, title: str) -> StoredSession: ...
+    async def open(self) -> None:
+        """启动时调用一次（建表、连接池预热）。内存实现什么都不用做。"""
+
+    async def close(self) -> None:
+        """关闭时调用一次，释放连接。"""
 
     @abstractmethod
-    async def get_session(self, session_id: str) -> Optional[StoredSession]: ...
+    async def create_session(self, title: str, owner: str) -> StoredSession: ...
 
     @abstractmethod
-    async def list_sessions(self) -> list[StoredSession]:
-        """按最近更新时间倒序。"""
+    async def get_session(self, session_id: str) -> Optional[StoredSession]:
+        """按 id 取，不管属于谁——归属检查在 ChatService 里做，store 只管存取。"""
+
+    @abstractmethod
+    async def list_sessions(self, owner: str) -> list[StoredSession]:
+        """某个访客的会话，按最近更新时间倒序。"""
 
     @abstractmethod
     async def append_messages(self, session_id: str, messages: list[StoredMessage]) -> None:

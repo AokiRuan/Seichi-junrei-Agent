@@ -1,7 +1,8 @@
-"""SQLAlchemy 模型（Day 4 接入 Postgres 时使用）。讲解见 docs/08-fastapi-sse.md。
+"""SQLAlchemy 模型，sql.py 使用。讲解见 docs/12-going-public.md。
 
-两张表，不引入 Alembic——启动时 create_all 建表即可。
+两张表，不引入 Alembic——启动时 create_all 建表即可（只建不存在的表，不会给已有的表加列）。
 字段与 store/base.py 的 StoredSession / StoredMessage 一一对应。
+只用 SQLite 和 Postgres 都支持的类型（JSON、带时区的 DateTime），同一份模型两边通用。
 """
 from datetime import datetime, timezone
 from typing import Any
@@ -22,6 +23,8 @@ class Session(Base):
     __tablename__ = "sessions"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # 访客 id。侧栏按它查「我的会话」，所以建索引
+    owner: Mapped[str] = mapped_column(String(64), index=True, default="")
     # 首条用户消息截断即可，不额外调 LLM 生成
     title: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

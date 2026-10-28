@@ -12,13 +12,14 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.staticfiles import StaticFiles
 
+from .access import AccessConfig, VisitorMiddleware, require_access
 from .chat_service import ChatService
 from .components import Components, default_components
 from .config import settings
-from .routes import chat, sessions
+from .routes import access, chat, sessions
 
 ComponentsFactory = Callable[[], AbstractAsyncContextManager[Components]]
 
@@ -26,8 +27,11 @@ ComponentsFactory = Callable[[], AbstractAsyncContextManager[Components]]
 FRONTEND_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
-def create_app(components_factory: ComponentsFactory | None = None) -> FastAPI:
+def create_app(
+    components_factory: ComponentsFactory | None = None, access_cfg: AccessConfig | None = None
+) -> FastAPI:
     factory = components_factory or (lambda: default_components(settings))
+    access_cfg = access_cfg or AccessConfig(settings.access_code, settings.cookie_secure)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -38,10 +42,16 @@ def create_app(components_factory: ComponentsFactory | None = None) -> FastAPI:
             yield
 
     app = FastAPI(title="Seichi-junrei Agent", lifespan=lifespan)
+    app.state.access = access_cfg
+    # 访客 id 与访问码，讲解见 docs/12-going-public.md
+    app.add_middleware(VisitorMiddleware, cookie_secure=access_cfg.cookie_secure)
     # 业务接口统一挂在 /api 下，根路径 / 留给前端页面。
-    # 开发时 Vite 只需代理 /api 一条规则；部署时一个容器同时出页面和接口，同源、无需 CORS
-    app.include_router(chat.router, prefix="/api")
-    app.include_router(sessions.router, prefix="/api")
+    # 开发时 Vite 只需代理 /api 一条规则；部署时一个容器同时出页面和接口，同源、无需 CORS。
+    # 路由级依赖先于路由自己的依赖执行：没有访问码的请求在 resolve_chat_session 新建会话之前就被挡下
+    gated = [Depends(require_access)]
+    app.include_router(chat.router, prefix="/api", dependencies=gated)
+    app.include_router(sessions.router, prefix="/api", dependencies=gated)
+    app.include_router(access.router, prefix="/api")
 
     @app.get("/health")
     async def health():

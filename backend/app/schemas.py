@@ -17,6 +17,10 @@ class ChatRequest(BaseModel):
     session_id: Optional[str] = Field(default=None, description="会话 id；不传则新建会话")
 
 
+class AccessRequest(BaseModel):
+    code: str = Field(max_length=200, description="访问码")
+
+
 class SessionOut(BaseModel):
     id: str
     title: str
